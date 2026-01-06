@@ -1,0 +1,48 @@
+Analysis: Why the Startup Screen is Missing
+
+  The CLI terminal is linked to the window via subprocess.PIPE. The current implementation
+  fails to show the startup screen/prompt for two primary reasons:
+
+   1. Newline Blocking: readline() waits for a \n character. Interactive CLIs often end their
+      startup banners or prompts (e.g., >  or Enter command:) without a newline, causing the
+      reader thread to hang indefinitely.
+   2. Block Buffering: When a process detects its stdout is a pipe rather than a TTY
+      (terminal), it often switches from "line buffering" to "block buffering" (e.g., waiting
+      for 4KB of data) to increase efficiency, delaying output visibility.
+
+  ---
+
+  Proposed Options
+
+  Option 1: Character-by-Character Reading (Recommended for Simplicity)
+  Modify the reader thread to use .read(1) instead of .readline().
+   * Pros: Captures prompts immediately; minimal code changes.
+   * Cons: Can be slightly higher CPU usage; doesn't solve "block buffering" if the CLI
+     ignores flush.
+
+  Option 2: Force Unbuffered Environment
+  Set environment variables (like PYTHONUNBUFFERED=1) and use bufsize=0 in Popen.
+   * Pros: Simple; forces the underlying process to send data immediately.
+   * Cons: Not all CLIs respect these variables; bufsize=0 requires binary mode (needs
+     decoding).
+
+  Option 3: Pseudo-Terminal (PTY) Wrapper
+  Use a library like pywinpty (Windows) to trick the CLI into thinking it's in a real
+  terminal.
+   * Pros: CLI behaves exactly like it does in cmd.exe; handles ANSI colors and complex
+     interactions perfectly.
+   * Cons: High complexity; requires external dependencies; platform-specific.
+
+  Option 4: ANSI to Tkinter Tag Translation
+  Implement a basic parser to convert ANSI escape codes (colors) into Tkinter text tags.
+   * Pros: Professional "terminal" look with colors.
+   * Cons: Significant manual implementation or additional library overhead.
+
+  ---
+
+  Next Steps in Plan
+   1. Diagnostic: Test gemini CLI output behavior using a small script to see if it's sending
+      ANSI codes or if it's strictly block-buffered.
+   2. Refactor: Transition _read_stdout to a non-blocking or character-based approach.
+   3. Enhancement: Evaluate if gemini uses colors; if so, implement basic tag mapping for the
+      chat window.
