@@ -54,24 +54,41 @@ class OrchestratorCore(TerminalCore):
         self.save_projects()
 
     def get_git_info(self, path):
+        """Returns detailed git info: branch, status, root, commit, remote_url"""
         if not os.path.exists(path):
-            return "Path not found", ""
+            return "Path not found", "", "", "", ""
         try:
             # Check if git repo
             is_git = subprocess.check_output(["git", "-C", path, "rev-parse", "--is-inside-work-tree"], 
                                              stderr=subprocess.STDOUT, text=True).strip() == "true"
             if not is_git:
-                return "Not a Git repo", ""
+                return "Not a Git repo", "", "", "", ""
             
             branch = subprocess.check_output(["git", "-C", path, "branch", "--show-current"], 
                                              stderr=subprocess.STDOUT, text=True).strip()
-            # Basic status
+            
+            root = subprocess.check_output(["git", "-C", path, "rev-parse", "--show-toplevel"], 
+                                            stderr=subprocess.STDOUT, text=True).strip()
+            
+            commit = subprocess.check_output(["git", "-C", path, "rev-parse", "--short", "HEAD"], 
+                                              stderr=subprocess.STDOUT, text=True).strip()
+
+            remote_url = ""
+            try:
+                remote_url = subprocess.check_output(["git", "-C", path, "remote", "get-url", "origin"], 
+                                                     stderr=subprocess.STDOUT, text=True).strip()
+                # Clean up .git suffix if present for browsing
+                if remote_url.endswith(".git"):
+                    remote_url = remote_url[:-4]
+            except: pass
+
             status = subprocess.check_output(["git", "-C", path, "status", "--short"], 
                                              stderr=subprocess.STDOUT, text=True).strip()
             status_summary = "Clean" if not status else "Modified"
-            return branch, status_summary
+            
+            return branch, status_summary, root, commit, remote_url
         except Exception as e:
-            return f"Git Error: {str(e)[:20]}", ""
+            return f"Git Error", "", "", "", ""
 
     def get_roles(self):
         if not os.path.exists(AGENT_DEFS_DIR):

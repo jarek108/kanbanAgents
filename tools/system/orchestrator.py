@@ -172,13 +172,14 @@ class OrchestratorUI:
         ttk.Button(frame, text="Save Project", command=on_save).pack()
 
     def open_edit_projects_popup(self):
+        import webbrowser
         popup = tk.Toplevel(self.root)
         popup.title("Manage Projects")
-        popup.geometry("900x500")
+        popup.geometry("1100x500")
         popup.configure(bg="#1e1e1e")
         
         self.root.update_idletasks()
-        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - 450
+        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - 550
         py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - 250
         popup.geometry(f"+{px}+{py}")
         
@@ -189,20 +190,24 @@ class OrchestratorUI:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Create Treeview
-        columns = ("name", "path", "repo", "kanban")
+        columns = ("name", "path", "kanban", "repo", "branch", "commit")
         tree = ttk.Treeview(main_frame, columns=columns, show="headings", selectmode="browse")
         
         # Define headings
         tree.heading("name", text="Id")
         tree.heading("path", text="Path")
-        tree.heading("repo", text="Repo")
         tree.heading("kanban", text="Kanban Project")
+        tree.heading("repo", text="Repo")
+        tree.heading("branch", text="Branch")
+        tree.heading("commit", text="Commit")
 
         # Column widths
-        tree.column("name", width=150, anchor="w")
-        tree.column("path", width=300, anchor="w")
-        tree.column("repo", width=150, anchor="w")
-        tree.column("kanban", width=150, anchor="w")
+        tree.column("name", width=100, anchor="w")
+        tree.column("path", width=250, anchor="w")
+        tree.column("kanban", width=120, anchor="w")
+        tree.column("repo", width=250, anchor="w")
+        tree.column("branch", width=100, anchor="w")
+        tree.column("commit", width=80, anchor="center")
 
         # Scrollbar
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=tree.yview)
@@ -211,20 +216,50 @@ class OrchestratorUI:
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        project_links = {} # Stores (item_id, col) -> target link
+
         def refresh_table():
+            project_links.clear()
             for item in tree.get_children():
                 tree.delete(item)
             
             for p in self.core.projects:
-                branch, status = self.core.get_git_info(p['local_path'])
-                repo_info = f"[{branch}]" if branch else "N/A"
-                tree.insert("", tk.END, values=(
+                branch, status, root, commit, remote = self.core.get_git_info(p['local_path'])
+                
+                item_id = tree.insert("", tk.END, values=(
                     p['name'], 
                     p['local_path'], 
-                    repo_info, 
-                    p['kanban_project_name']
+                    p['kanban_project_name'],
+                    root or "N/A",
+                    f"{branch} ({status})" if branch else "N/A",
+                    commit or "N/A"
                 ))
+                
+                # Store link info
+                project_links[(item_id, "path")] = p['local_path']
+                if root: project_links[(item_id, "repo")] = root
+                if remote and commit: 
+                    # If it looks like a web URL, construct commit link
+                    if "http" in remote:
+                        project_links[(item_id, "commit")] = f"{remote}/commit/{commit}"
+                    else:
+                        project_links[(item_id, "commit")] = root # Fallback to local root
 
+        def on_click(event):
+            region = tree.identify("region", event.x, event.y)
+            if region == "cell":
+                column = tree.identify_column(event.x) # Returns "#1", "#2" etc
+                item_id = tree.identify_row(event.y)
+                col_name = columns[int(column[1:]) - 1]
+                
+                link = project_links.get((item_id, col_name))
+                if link:
+                    if link.startswith("http"):
+                        webbrowser.open(link)
+                    else:
+                        os.startfile(link)
+
+        tree.bind("<Button-1>", on_click)
         refresh_table()
 
         # Action Buttons

@@ -3,5 +3,5 @@
     "sync_interval_ms": 1000,
     "auto_sync": true,
     "last_geometry": "1000x400",
-    "orch_geometry": "1100x700+226+-1001"
+    "orch_geometry": "1100x700+288+-1001"
 }
