@@ -86,8 +86,7 @@ def update_task(task_id, updates):
 
 def extract_recipient(text):
     if not text: return None
-    match = re.search(r"(?:^[-*]\s*)?Rec[ei]pient:\s*(.+)$
-", text, re.MULTILINE | re.IGNORECASE)
+    match = re.search(r"(?:^[-*]\s*)?Rec[ei]pient:\s*(.+)$", text, re.MULTILINE | re.IGNORECASE)
     return match.group(1).strip() if match else None
 
 def format_task(task, mode="medium", highlight_user=None):

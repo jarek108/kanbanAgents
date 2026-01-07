@@ -1,233 +1,197 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
-import win32gui
-import win32con
-import pyautogui
-import subprocess
-import os
-import tempfile
 import threading
-import time
+from terminal_core import TerminalCore
 
-class TerminalConnectorV2:
+class TerminalUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Terminal Connector v2 (UIA)")
-        self.root.geometry("800x850")
         
-        self.connected_hwnd = None
-        self.connected_title = None
-        self.sync_interval = 1000  # ms
+        self.core = TerminalCore()
+        self.root.geometry(self.core.config.get("last_geometry", "1000x400"))
+        self.root.configure(bg="#1e1e1e")
+        
         self.is_syncing = False
-        self.capture_lock = threading.Lock()
         
+        self.setup_styles()
         self.setup_ui()
-        self.refresh_window_list()
+        
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.after(500, self.auto_connect)
+
+    def setup_styles(self):
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        self.style.configure("TFrame", background="#1e1e1e")
+        self.style.configure("TLabel", background="#1e1e1e", foreground="#d4d4d4", font=("Segoe UI", 9))
+        self.style.configure("TButton", padding=3, font=("Segoe UI", 9))
+        self.style.configure("Header.TFrame", background="#2d2d2d")
+        self.style.configure("Header.TLabel", background="#2d2d2d", font=("Segoe UI", 9, "bold"))
+        self.style.configure("TLabelframe", background="#1e1e1e", foreground="#007acc", font=("Segoe UI", 9, "bold"))
+        self.style.configure("TLabelframe.Label", background="#1e1e1e", foreground="#007acc")
 
     def setup_ui(self):
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        self.main_container = ttk.Frame(self.root, padding="10")
+        self.main_container.pack(fill=tk.BOTH, expand=True)
 
-        # Search / Filter
-        filter_frame = ttk.Frame(main_frame)
-        filter_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Label(filter_frame, text="Search Window:").pack(side=tk.LEFT)
-        self.filter_var = tk.StringVar()
-        self.filter_var.trace_add("write", lambda *args: self.filter_list())
-        self.filter_entry = ttk.Entry(filter_frame, textvariable=self.filter_var)
-        self.filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        
-        ttk.Button(filter_frame, text="Refresh", command=self.refresh_window_list).pack(side=tk.RIGHT)
+        # --- HEADER ---
+        self.header_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="5")
+        self.header_bar.pack(fill=tk.X, side=tk.TOP, pady=(0, 5))
 
-        # Window List
-        list_frame = ttk.Frame(main_frame)
-        list_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        self.window_listbox = tk.Listbox(list_frame, height=5, font=("Consolas", 9))
-        self.window_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.window_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.window_listbox.config(yscrollcommand=scrollbar.set)
+        ttk.Button(self.header_bar, text="Select Window", command=self.open_selection_popup).pack(side=tk.LEFT, padx=(0, 10))
+        self.action_btn = ttk.Button(self.header_bar, text="Reconnect", command=self.toggle_connection)
+        self.action_btn.pack(side=tk.LEFT, padx=(0, 10))
 
-        # Terminal Display
-        display_frame = ttk.LabelFrame(main_frame, text="Background UIA Terminal Sync", padding="5")
-        display_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.status_icon = tk.Label(self.header_bar, text="●", fg="red", bg="#2d2d2d", font=("Segoe UI", 11))
+        self.status_icon.pack(side=tk.LEFT)
+        self.status_label = ttk.Label(self.header_bar, text="Disconnected", style="Header.TLabel")
+        self.status_label.pack(side=tk.LEFT, padx=(2, 15))
 
+        self.auto_sync_var = tk.BooleanVar(value=self.core.config['auto_sync'])
+        tk.Checkbutton(self.header_bar, text="Mirroring", variable=self.auto_sync_var, 
+                       command=self.toggle_auto_sync, bg="#2d2d2d", fg="#d4d4d4", 
+                       selectcolor="#1e1e1e", activebackground="#2d2d2d", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(self.header_bar, text="Sync(ms):", style="Header.TLabel").pack(side=tk.LEFT, padx=(10, 2))
+        self.sync_val_var = tk.StringVar(value=str(self.core.config['sync_interval_ms']))
+        self.sync_entry = tk.Entry(self.header_bar, textvariable=self.sync_val_var, width=5, bg="#1e1e1e", fg="#d4d4d4", borderwidth=0)
+        self.sync_entry.pack(side=tk.LEFT, padx=5)
+        self.sync_entry.bind("<Return>", self.update_sync_interval)
+
+        self.output_visible = tk.BooleanVar(value=False)
+        self.toggle_output_btn = ttk.Button(self.header_bar, text="▼ Show Live", command=self.toggle_output_panel)
+        self.toggle_output_btn.pack(side=tk.RIGHT, padx=5)
+
+        # --- Terminal Mirror ---
+        self.display_frame = ttk.LabelFrame(self.main_container, text=" Terminal Mirror ", padding="5")
         self.terminal_display = scrolledtext.ScrolledText(
-            display_frame, 
-            state='disabled', 
-            bg="#1e1e1e", 
-            fg="#d4d4d4", 
-            font=("Consolas", 10),
-            padx=5,
-            pady=5,
-            borderwidth=0,
-            highlightthickness=0
+            self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
+            padx=10, pady=10, borderwidth=0, highlightthickness=0
         )
         self.terminal_display.pack(fill=tk.BOTH, expand=True)
 
-        # Controls
-        control_frame = ttk.LabelFrame(main_frame, text="Status & Settings", padding="10")
-        control_frame.pack(fill=tk.X, pady=(5, 0))
+        # --- Command Field ---
+        self.cmd_frame = ttk.LabelFrame(self.main_container, text=" Send Command ", padding="10")
+        self.cmd_frame.pack(fill=tk.X, side=tk.TOP, pady=(5, 0))
+        self.cmd_entry = ttk.Entry(self.cmd_frame)
+        self.cmd_entry.pack(fill=tk.X, expand=True, padx=5)
+        self.cmd_entry.bind("<Return>", self.send_command)
 
-        self.connect_btn = ttk.Button(control_frame, text="Connect (UIA)", command=self.connect_window)
-        self.connect_btn.pack(side=tk.LEFT, padx=5)
+    def on_closing(self):
+        self.core.save_config({"last_geometry": self.root.geometry()})
+        self.root.destroy()
 
-        self.auto_sync_var = tk.BooleanVar(value=True)
-        self.sync_check = ttk.Checkbutton(control_frame, text="Silent Auto-Sync", variable=self.auto_sync_var)
-        self.sync_check.pack(side=tk.LEFT, padx=10)
+    def toggle_output_panel(self):
+        if self.output_visible.get():
+            self.display_frame.pack_forget()
+            self.toggle_output_btn.config(text="▼ Show Live")
+            self.output_visible.set(False)
+        else:
+            self.cmd_frame.pack_forget()
+            self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
+            self.cmd_frame.pack(fill=tk.X, side=tk.TOP, pady=(5, 0))
+            self.toggle_output_btn.config(text="▲ Hide Live")
+            self.output_visible.set(True)
 
-        self.status_label = ttk.Label(control_frame, text="Status: Disconnected", foreground="red")
-        self.status_label.pack(side=tk.RIGHT, padx=10)
-
-        # Command Input
-        cmd_frame = ttk.LabelFrame(main_frame, text="Send Command (Requires brief focus)", padding="10")
-        cmd_frame.pack(fill=tk.X, pady=(10, 0))
-
-        self.cmd_entry = ttk.Entry(cmd_frame)
-        self.cmd_entry.insert(0, "dir")
-        self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    def open_selection_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.title("Select Terminal Window")
+        popup.geometry("400x300")
+        popup.configure(bg="#1e1e1e")
         
-        self.send_btn = ttk.Button(cmd_frame, text="Execute", command=self.send_command, state=tk.DISABLED)
-        self.send_btn.pack(side=tk.RIGHT)
-
-        self.all_windows = [] 
-
-    def get_window_list(self):
-        windows = []
-        def enum_handler(hwnd, ctx):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd)
-                if title:
-                    windows.append((title, hwnd))
-        win32gui.EnumWindows(enum_handler, None)
-        return sorted(windows, key=lambda x: x[0].lower())
-
-    def refresh_window_list(self):
-        self.all_windows = self.get_window_list()
-        self.filter_list()
-
-    def filter_list(self):
-        search_term = self.filter_var.get().lower()
-        self.window_listbox.delete(0, tk.END)
-        for title, hwnd in self.all_windows:
-            if search_term in title.lower():
-                self.window_listbox.insert(tk.END, title)
-
-    def connect_window(self):
-        selection = self.window_listbox.curselection()
-        if not selection:
-            messagebox.showwarning("No Selection", "Please select a window.")
-            return
-
-        selected_title = self.window_listbox.get(selection[0])
-        target_hwnd = next((hwnd for title, hwnd in self.all_windows if title == selected_title), None)
+        # Center on parent
+        self.root.update_idletasks()
+        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - 200
+        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - 150
+        popup.geometry(f"+{px}+{py}")
         
-        if target_hwnd:
-            self.connected_hwnd = target_hwnd
-            self.connected_title = selected_title
-            self.status_label.config(text=f"Connected: {selected_title[:20]}", foreground="green")
-            self.send_btn.config(state=tk.NORMAL)
-            
-            # Start sync loop
+        popup.transient(self.root)
+        popup.grab_set()
+
+        frame = ttk.Frame(popup, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame, text="Search Window:").pack(fill=tk.X)
+        search_var = tk.StringVar()
+        entry = ttk.Entry(frame, textvariable=search_var)
+        entry.pack(fill=tk.X, pady=5)
+        entry.focus_set()
+
+        listbox = tk.Listbox(frame, bg="#2d2d2d", fg="#d4d4d4", borderwidth=0, font=("Consolas", 9))
+        listbox.pack(fill=tk.BOTH, expand=True)
+
+        def populate_list():
+            listbox.delete(0, tk.END)
+            term = search_var.get().lower()
+            windows = self.core.get_window_list()
+            for title, hwnd in windows:
+                if term in title.lower(): listbox.insert(tk.END, title)
+
+        search_var.trace_add("write", lambda *args: populate_list())
+        populate_list()
+
+        def on_select():
+            selection = listbox.curselection()
+            if selection:
+                title = listbox.get(selection[0])
+                windows = self.core.get_window_list()
+                hwnd = next((h for t, h in windows if t == title), None)
+                if hwnd: 
+                    self.connect_to_hwnd(hwnd, title)
+                    popup.destroy()
+
+        ttk.Button(frame, text="Connect", command=on_select).pack(pady=10)
+        listbox.bind("<Double-Button-1>", lambda e: on_select())
+
+    def toggle_connection(self):
+        if self.core.connected_hwnd: self.disconnect()
+        else: self.auto_connect()
+
+    def disconnect(self):
+        self.core.disconnect()
+        self.status_icon.config(fg="red")
+        self.status_label.config(text="Disconnected")
+        self.action_btn.config(text="Reconnect")
+
+    def auto_connect(self):
+        target = self.core.config.get("last_title")
+        if not target: return
+        windows = self.core.get_window_list()
+        for title, hwnd in windows:
+            if target.lower() in title.lower(): self.connect_to_hwnd(hwnd, title); return
+
+    def connect_to_hwnd(self, hwnd, title):
+        if self.core.connect_to_hwnd(hwnd, title):
+            self.status_icon.config(fg="green")
+            self.status_label.config(text=f"Connected: {title[:20]}...")
+            self.action_btn.config(text="Disconnect")
             if not self.is_syncing:
                 self.is_syncing = True
                 self.periodic_sync()
 
+    def update_sync_interval(self, event=None):
+        try:
+            val = int(self.sync_val_var.get())
+            if val < 100: val = 100
+            self.core.save_config({'sync_interval_ms': val})
+            self.sync_val_var.set(str(val))
+            self.root.focus_set()
+        except: self.sync_val_var.set(str(self.core.config['sync_interval_ms']))
+
+    def toggle_auto_sync(self): 
+        self.core.save_config({"auto_sync": self.auto_sync_var.get()})
+
     def periodic_sync(self):
-        if self.auto_sync_var.get() and self.connected_title:
-            # Run the heavy PS call in a background thread to keep GUI responsive
+        if self.auto_sync_var.get() and self.core.connected_title:
             threading.Thread(target=self._uia_sync_thread, daemon=True).start()
-        
-        self.root.after(self.sync_interval, self.periodic_sync)
+        ms = self.core.config.get('sync_interval_ms', 1000)
+        self.root.after(ms, self.periodic_sync)
 
     def _uia_sync_thread(self):
-        if not self.capture_lock.acquire(blocking=False):
-            return # Skip if a capture is already in progress
-            
-        try:
-            content = self._get_uia_content(self.connected_title)
-            if content:
-                self.root.after(0, self.update_display, content)
-        finally:
-            self.capture_lock.release()
-
-    def _get_uia_content(self, target_title):
-        ps_content = r"""
-$OutputEncoding = [System.Text.Encoding]::UTF8
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$targetTitle = "{0}"
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-""" + r"""
-$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $targetTitle)
-$element = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
-
-if ($element -eq $null) {
-    $all = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($item in $all) {
-        if ($item.Current.Name -like "*$targetTitle*") {
-            $element = $item
-            break
-        }
-    }
-}
-
-if ($element -ne $null) {
-    $allDescendants = $element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-    $bestText = ""
-    
-    foreach ($item in $allDescendants) {
-        try {
-            $name = $item.Current.Name
-            $pattern = $item.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
-            if ($pattern -ne $null) {
-                $text = $pattern.DocumentRange.GetText(-1)
-                $trimmed = $text.Trim()
-                
-                # Priority 1: Specifically named buffer
-                if ($name -eq "Windows PowerShell" -or $name -eq "Command Prompt") {
-                    Write-Host $text
-                    exit 0
-                }
-                
-                # Priority 2: Longest text that isn't just the window title
-                if ($trimmed.Length -gt $bestText.Length -and $trimmed -ne $targetTitle) {
-                    $bestText = $text
-                }
-            }
-        } catch {}
-    }
-    
-    if ($bestText.Length -gt 0) {
-        Write-Host $bestText
-        exit 0
-    }
-}
-"""
-        
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
-                tf.write(ps_content.format(target_title))
-                temp_path = tf.name
-
-            process = subprocess.Popen(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", temp_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            stdout_bytes, _ = process.communicate()
-            
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                
-            return stdout_bytes.decode('utf-8', errors='replace').strip()
-        except Exception as e:
-            print(f"UIA Error: {e}")
-            return None
+        content = self.core.get_buffer_text()
+        if content:
+            self.root.after(0, self.update_display, content)
 
     def update_display(self, content):
         self.terminal_display.config(state='normal')
@@ -236,28 +200,14 @@ if ($element -ne $null) {
         self.terminal_display.see(tk.END)
         self.terminal_display.config(state='disabled')
 
-    def focus_target(self):
-        if not self.connected_hwnd or not win32gui.IsWindow(self.connected_hwnd):
-            self.status_label.config(text="Status: Lost", foreground="red")
-            return False
-        
-        try:
-            if win32gui.IsIconic(self.connected_hwnd):
-                win32gui.ShowWindow(self.connected_hwnd, win32con.SW_RESTORE)
-            win32gui.SetForegroundWindow(self.connected_hwnd)
-            time.sleep(0.05)
-            return True
-        except Exception:
-            return False
-
-    def send_command(self):
-        if self.focus_target():
-            text = self.cmd_entry.get()
-            pyautogui.write(text + "\n", interval=0.02)
-            # Return focus to UI
+    def send_command(self, event=None):
+        cmd = self.cmd_entry.get()
+        if not cmd: return
+        if self.core.send_command(cmd):
+            self.cmd_entry.delete(0, tk.END)
             self.root.focus_force()
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = TerminalConnectorV2(root)
+    app = TerminalUI(root)
     root.mainloop()
