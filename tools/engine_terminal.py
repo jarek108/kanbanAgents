@@ -71,33 +71,23 @@ class TerminalEngine:
             return content
         finally: self.capture_lock.release()
 
-    def get_buffer_text_by_title(self, title_query):
-        """Finds a window by title and returns its buffer text once."""
-        windows = self.get_window_list()
-        target = next((h for t, h in windows if title_query.lower() in t.lower()), None)
-        if not target:
-            return f"Error: Window containing '{title_query}' not found."
-        
-        _, pid = win32process.GetWindowThreadProcessId(target)
-        return self._execute_uia_capture(target, pid)
-
     def _execute_uia_capture(self, hwnd, pid):
         ps_content = r"""
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$hwnd = {0}
+$targetPid = {1}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
-$element = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+# Search from Root for any element belonging to our target PID
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $targetPid)
+$elements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
 
-if ($element -ne $null) {{
-    # Enumerate all descendants and find the best text source
-    $all = $element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+if ($elements -ne $null -and $elements.Count -gt 0) {{
     $bestText = ""
-    $windowTitle = $element.Current.Name
     
-    foreach ($item in $all) {{
+    foreach ($item in $elements) {{
         try {{
             $pattern = $item.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
             if ($pattern -ne $null) {{
@@ -105,16 +95,12 @@ if ($element -ne $null) {{
                 $trimmed = $text.Trim()
                 $name = $item.Current.Name
                 
-                # Logic: We want long text that isn't just the window title or shell name
                 if ($trimmed.Length -gt 5) {{
-                    # If it's significantly long, it's likely the buffer
-                    if ($trimmed.Length -gt 50) {{
+                    if ($name -match "PowerShell|Command Prompt|Terminal|Console|Text Area") {{
                         Write-Host $text
                         exit 0
                     }}
-                    
-                    # If it's not the window title and longer than what we have, keep it
-                    if ($trimmed -ne $windowTitle -and $name -ne $windowTitle -and $trimmed.Length -gt $bestText.Length) {{
+                    if ($trimmed.Length -gt $bestText.Length) {{
                         $bestText = $text
                     }}
                 }}
@@ -127,18 +113,18 @@ if ($element -ne $null) {{
         exit 0
     }}
 }}
-""".format(hwnd)
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
-                tf.write(ps_content)
-                temp_path = tf.name
-            process = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", temp_path],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
-            out, err = process.communicate()
-            if os.path.exists(temp_path): os.remove(temp_path)
-            return out.decode('utf-8', errors='replace').strip()
-        except:
-            return None
+""".format(hwnd, pid)
+try:
+    with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
+        tf.write(ps_content)
+        temp_path = tf.name
+    process = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", temp_path],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+    out, err = process.communicate()
+    if os.path.exists(temp_path): os.remove(temp_path)
+    return out.decode('utf-8', errors='replace').strip()
+except:
+    return None
 
 if __name__ == "__main__":
     import sys
