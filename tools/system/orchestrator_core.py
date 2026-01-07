@@ -42,6 +42,17 @@ class OrchestratorCore(TerminalCore):
         self.save_projects()
         return project
 
+    def delete_project(self, name):
+        self.projects = [p for p in self.projects if p['name'] != name]
+        self.save_projects()
+
+    def update_project(self, old_name, new_data):
+        for p in self.projects:
+            if p['name'] == old_name:
+                p.update(new_data)
+                break
+        self.save_projects()
+
     def get_git_info(self, path):
         if not os.path.exists(path):
             return "Path not found", ""

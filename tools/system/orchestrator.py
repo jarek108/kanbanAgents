@@ -54,6 +54,7 @@ class OrchestratorUI:
         self.project_dropdown.bind("<<ComboboxSelected>>", self.on_project_select)
 
         ttk.Button(proj_bar, text="+ Add Project", command=self.open_add_project_popup).pack(side=tk.LEFT, padx=15)
+        ttk.Button(proj_bar, text="Edit Projects", command=self.open_edit_projects_popup).pack(side=tk.LEFT)
 
         # --- INFO PANEL (Git & Kanban) ---
         info_frame = ttk.Frame(self.main_container, padding="5")
@@ -120,15 +121,21 @@ class OrchestratorUI:
             self.kanban_label.config(text=f"Kanban: {self.active_project['kanban_project_name']}")
 
     def open_add_project_popup(self):
+        # 1. Immediate Folder Browser
+        start_dir = os.getcwd()
+        folder = filedialog.askdirectory(initialdir=start_dir, title="Select Project Folder")
+        if not folder: return
+
+        # 2. Details Popup
         popup = tk.Toplevel(self.root)
-        popup.title("Add New Project")
-        popup.geometry("500x350")
+        popup.title("Project Details")
+        popup.geometry("500x300")
         popup.configure(bg="#1e1e1e")
         
         # Center on parent
         self.root.update_idletasks()
         px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - 250
-        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - 175
+        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - 150
         popup.geometry(f"+{px}+{py}")
         
         popup.transient(self.root)
@@ -139,43 +146,91 @@ class OrchestratorUI:
 
         ttk.Label(frame, text="Name (Alias):").pack(fill=tk.X)
         name_entry = ttk.Entry(frame)
+        name_entry.insert(0, os.path.basename(folder))
         name_entry.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(frame, text="Local Path:").pack(fill=tk.X)
-        path_frame = ttk.Frame(frame)
-        path_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        path_entry = ttk.Entry(path_frame)
-        path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        def browse_folder():
-            start_dir = os.getcwd()
-            folder = filedialog.askdirectory(initialdir=start_dir, title="Select Project Folder")
-            if folder:
-                path_entry.delete(0, tk.END)
-                path_entry.insert(0, folder)
-                # Auto-fill name if empty
-                if not name_entry.get():
-                    name_entry.insert(0, os.path.basename(folder))
-
-        ttk.Button(path_frame, text="Browse...", command=browse_folder).pack(side=tk.RIGHT, padx=(5, 0))
+        path_label = ttk.Label(frame, text=folder, style="Info.TLabel")
+        path_label.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(frame, text="Kanban Project Name:").pack(fill=tk.X)
         kanban_entry = ttk.Entry(frame)
+        kanban_entry.insert(0, name_entry.get()) # Suggest same as name
         kanban_entry.pack(fill=tk.X, pady=(0, 20))
 
         def on_save():
-            n, p, k = name_entry.get(), path_entry.get(), kanban_entry.get()
-            if n and p and k:
-                self.core.add_project(n, p, k)
+            n, k = name_entry.get(), kanban_entry.get()
+            if n and k:
+                self.core.add_project(n, folder, k)
                 self.project_dropdown['values'] = [prj['name'] for prj in self.core.projects]
                 self.project_var.set(n)
                 self.on_project_select()
                 popup.destroy()
             else:
-                messagebox.showerror("Error", "All fields required.")
+                messagebox.showerror("Error", "Name and Kanban Name required.")
 
         ttk.Button(frame, text="Save Project", command=on_save).pack()
+
+    def open_edit_projects_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.title("Manage Projects")
+        popup.geometry("600x400")
+        popup.configure(bg="#1e1e1e")
+        
+        # Center
+        self.root.update_idletasks()
+        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - 300
+        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - 200
+        popup.geometry(f"+{px}+{py}")
+        
+        popup.transient(self.root)
+        popup.grab_set()
+
+        main_frame = ttk.Frame(popup, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Canvas/Scrollbar for long lists
+        canvas = tk.Canvas(main_frame, bg="#1e1e1e", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        scroll_frame = ttk.Frame(canvas)
+
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def refresh_list():
+            for widget in scroll_frame.winfo_children():
+                widget.destroy()
+            
+            for p in self.core.projects:
+                p_frame = ttk.LabelFrame(scroll_frame, text=f" {p['name']} ", padding="10")
+                p_frame.pack(fill=tk.X, pady=5, padx=5)
+                
+                ttk.Label(p_frame, text=f"Path: {p['local_path']}", font=("Segoe UI", 8)).pack(anchor="w")
+                ttk.Label(p_frame, text=f"Kanban: {p['kanban_project_name']}", font=("Segoe UI", 8)).pack(anchor="w")
+                
+                btn_frame = ttk.Frame(p_frame)
+                btn_frame.pack(fill=tk.X, pady=(5, 0))
+                
+                def delete_p(name=p['name']):
+                    if messagebox.askyesno("Delete", f"Remove '{name}' from projects?"):
+                        self.core.delete_project(name)
+                        self.project_dropdown['values'] = [prj['name'] for prj in self.core.projects]
+                        if self.project_var.get() == name:
+                            self.project_var.set(self.project_dropdown['values'][0] if self.core.projects else "")
+                            self.on_project_select()
+                        refresh_list()
+
+                ttk.Button(btn_frame, text="Remove", command=delete_p).pack(side=tk.RIGHT)
+
+        refresh_list()
 
     def start_worker(self):
         if not self.active_project:
