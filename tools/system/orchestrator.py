@@ -193,9 +193,9 @@ class OrchestratorUI:
         tree = ttk.Treeview(main_frame, columns=columns, show="headings", selectmode="browse")
         
         # Define headings
-        tree.heading("name", text="Name / Alias / ID")
-        tree.heading("path", text="Folder / Path")
-        tree.heading("repo", text="Repo (Git)")
+        tree.heading("name", text="Id")
+        tree.heading("path", text="Path")
+        tree.heading("repo", text="Repo")
         tree.heading("kanban", text="Kanban Project")
 
         # Column widths
