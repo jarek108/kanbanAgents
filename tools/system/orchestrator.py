@@ -174,13 +174,12 @@ class OrchestratorUI:
     def open_edit_projects_popup(self):
         popup = tk.Toplevel(self.root)
         popup.title("Manage Projects")
-        popup.geometry("600x400")
+        popup.geometry("900x500")
         popup.configure(bg="#1e1e1e")
         
-        # Center
         self.root.update_idletasks()
-        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - 300
-        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - 200
+        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - 450
+        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - 250
         popup.geometry(f"+{px}+{py}")
         
         popup.transient(self.root)
@@ -189,48 +188,68 @@ class OrchestratorUI:
         main_frame = ttk.Frame(popup, padding="15")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Canvas/Scrollbar for long lists
-        canvas = tk.Canvas(main_frame, bg="#1e1e1e", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        scroll_frame = ttk.Frame(canvas)
+        # Create Treeview
+        columns = ("name", "path", "repo", "kanban")
+        tree = ttk.Treeview(main_frame, columns=columns, show="headings", selectmode="browse")
+        
+        # Define headings
+        tree.heading("name", text="Name / Alias / ID")
+        tree.heading("path", text="Folder / Path")
+        tree.heading("repo", text="Repo (Git)")
+        tree.heading("kanban", text="Kanban Project")
 
-        scroll_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        # Column widths
+        tree.column("name", width=150, anchor="w")
+        tree.column("path", width=300, anchor="w")
+        tree.column("repo", width=150, anchor="w")
+        tree.column("kanban", width=150, anchor="w")
 
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        def refresh_list():
-            for widget in scroll_frame.winfo_children():
-                widget.destroy()
+        def refresh_table():
+            for item in tree.get_children():
+                tree.delete(item)
             
             for p in self.core.projects:
-                p_frame = ttk.LabelFrame(scroll_frame, text=f" {p['name']} ", padding="10")
-                p_frame.pack(fill=tk.X, pady=5, padx=5)
-                
-                ttk.Label(p_frame, text=f"Path: {p['local_path']}", font=("Segoe UI", 8)).pack(anchor="w")
-                ttk.Label(p_frame, text=f"Kanban: {p['kanban_project_name']}", font=("Segoe UI", 8)).pack(anchor="w")
-                
-                btn_frame = ttk.Frame(p_frame)
-                btn_frame.pack(fill=tk.X, pady=(5, 0))
-                
-                def delete_p(name=p['name']):
-                    if messagebox.askyesno("Delete", f"Remove '{name}' from projects?"):
-                        self.core.delete_project(name)
-                        self.project_dropdown['values'] = [prj['name'] for prj in self.core.projects]
-                        if self.project_var.get() == name:
-                            self.project_var.set(self.project_dropdown['values'][0] if self.core.projects else "")
-                            self.on_project_select()
-                        refresh_list()
+                branch, status = self.core.get_git_info(p['local_path'])
+                repo_info = f"[{branch}]" if branch else "N/A"
+                tree.insert("", tk.END, values=(
+                    p['name'], 
+                    p['local_path'], 
+                    repo_info, 
+                    p['kanban_project_name']
+                ))
 
-                ttk.Button(btn_frame, text="Remove", command=delete_p).pack(side=tk.RIGHT)
+        refresh_table()
 
-        refresh_list()
+        # Action Buttons
+        btn_frame = ttk.Frame(popup, padding="10")
+        btn_frame.pack(fill=tk.X)
+
+        def on_delete():
+            selection = tree.selection()
+            if not selection:
+                messagebox.showwarning("Selection", "Select a project to remove.")
+                return
+            
+            item = tree.item(selection[0])
+            name = item['values'][0]
+            
+            if messagebox.askyesno("Delete", f"Remove '{name}' from projects?"):
+                self.core.delete_project(name)
+                self.project_dropdown['values'] = [prj['name'] for prj in self.core.projects]
+                if self.project_var.get() == name:
+                    self.project_var.set(self.project_dropdown['values'][0] if self.core.projects else "")
+                    self.on_project_select()
+                refresh_table()
+
+        ttk.Button(btn_frame, text="Remove Selected", command=on_delete).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="Close", command=popup.destroy).pack(side=tk.RIGHT)
 
     def start_worker(self):
         if not self.active_project:
