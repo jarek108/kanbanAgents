@@ -63,31 +63,46 @@ class TerminalEngine:
     def get_buffer_text(self):
         """Captures terminal text buffer using UIA. SILENT method."""
         if not self.connected_hwnd or not win32gui.IsWindow(self.connected_hwnd): return None
+        if not self.connected_title: return None
         if not self.capture_lock.acquire(blocking=False): return None
         try:
-            _, pid = win32process.GetWindowThreadProcessId(self.connected_hwnd)
-            content = self._execute_uia_capture(self.connected_hwnd, pid)
+            # We use the title for Root-based discovery as it bridges process boundaries
+            content = self._execute_uia_capture(self.connected_title)
             if content: engine_events.emit("terminal_update", content)
             return content
         finally: self.capture_lock.release()
 
-    def _execute_uia_capture(self, hwnd, pid):
+    def _execute_uia_capture(self, target_title):
         ps_content = r"""
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$targetPid = {1}
+$targetTitle = "{0}"
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
-# Search from Root for any element belonging to our target PID
 $root = [System.Windows.Automation.AutomationElement]::RootElement
-$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $targetPid)
-$elements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
 
-if ($elements -ne $null -and $elements.Count -gt 0) {{
+# Search from Root for the window by name
+# This is more reliable than HWND for modern multi-process terminals
+$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $targetTitle)
+$element = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+
+if ($element -eq $null) {{
+    # Fallback to fuzzy match
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($item in $all) {{
+        if ($item.Current.Name -like "*$targetTitle*") {{
+            $element = $item
+            break
+        }}
+    }}
+}}
+
+if ($element -ne $null) {{
+    $allDescendants = $element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
     $bestText = ""
     
-    foreach ($item in $elements) {{
+    foreach ($item in $allDescendants) {{
         try {{
             $pattern = $item.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
             if ($pattern -ne $null) {{
@@ -113,7 +128,7 @@ if ($elements -ne $null -and $elements.Count -gt 0) {{
         exit 0
     }}
 }}
-"""
+""".format(target_title)
         try:
             with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
                 tf.write(ps_content)

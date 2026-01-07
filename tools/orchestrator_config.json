@@ -15,7 +15,7 @@
     "terminal": {
         "sync_interval_ms": 1000,
         "auto_sync": true,
-        "last_title": "MyTerminal",
+        "last_title": "Agent_test_e2e_manager",
         "last_geometry": "1000x400+329+-893",
         "git_refresh_ms": 3000
     },
