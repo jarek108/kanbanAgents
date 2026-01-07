@@ -61,116 +61,58 @@ class TerminalEngine:
         except: return False
 
     def get_buffer_text(self):
+        """Captures terminal text buffer using UIA. SILENT method."""
         if not self.connected_hwnd or not win32gui.IsWindow(self.connected_hwnd): return None
         if not self.capture_lock.acquire(blocking=False): return None
         try:
-            # 1. Try UIA first
             _, pid = win32process.GetWindowThreadProcessId(self.connected_hwnd)
             content = self._execute_uia_capture(self.connected_hwnd, pid)
-            
-            # 2. Fallback to Clipboard if UIA returns nothing or is too short
-            if not content or len(content) < 10:
-                content = self._get_buffer_text_clipboard()
-                
             if content: engine_events.emit("terminal_update", content)
             return content
         finally: self.capture_lock.release()
-
-    def _get_buffer_text_clipboard(self):
-        """Captures buffer via Ctrl+A, Ctrl+C fallback."""
-        import pyperclip
-        if not self.connected_hwnd or not win32gui.IsWindow(self.connected_hwnd): return None
-        
-        try:
-            # Save old clipboard
-            old = pyperclip.paste()
-            
-            # Focus and interact
-            if win32gui.IsIconic(self.connected_hwnd): win32gui.ShowWindow(self.connected_hwnd, win32con.SW_RESTORE)
-            win32gui.SetForegroundWindow(self.connected_hwnd)
-            time.sleep(0.1)
-            
-            # Try Ctrl+Shift+A/C first (Windows Terminal)
-            pyautogui.hotkey('ctrl', 'shift', 'a')
-            time.sleep(0.05)
-            pyautogui.hotkey('ctrl', 'shift', 'c')
-            time.sleep(0.1)
-            
-            content = pyperclip.paste()
-            if content != old and len(content) > 10:
-                return content
-                
-            # Try standard Ctrl+A/C
-            pyautogui.hotkey('ctrl', 'a')
-            time.sleep(0.05)
-            pyautogui.hotkey('ctrl', 'c')
-            time.sleep(0.1)
-            
-            content = pyperclip.paste()
-            return content if content != old else None
-        except:
-            return None
 
     def _execute_uia_capture(self, hwnd, pid):
         ps_content = r"""
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $hwnd = {0}
-$pid = {1}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
-# Prioritize HWND as it's a direct link to the window
 $element = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
 
-if ($element -eq $null -and $pid -ne 0) {{
-    # Fallback to PID search if HWND failed
-    $element = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object {{ $_.Current.ProcessId -eq $pid }} | Select-Object -First 1
-}}
-
 if ($element -ne $null) {{
-    # Try multiple ways to get text
+    # Enumerate all descendants and find the best text source
+    $all = $element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
     $bestText = ""
-    # DEBUG: Write-Host "DEBUG_PROPS: Name=$($element.Current.Name) PID=$($element.Current.ProcessId) Type=$($element.Current.ControlType.ProgrammaticName)"
     
-    # 1. Check if the element itself has a ValuePattern
-    try {{
-        $valPattern = $element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-        if ($valPattern -ne $null) {{
-            $bestText = $valPattern.Current.Value
-            if ($bestText.Length -gt 10) {{ Write-Host $bestText; exit 0 }}
-        }}
-    }} catch {{}}
-
-    # 2. Search descendants
-    $allDescendants = $element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-    
-    foreach ($item in $allDescendants) {{
+    foreach ($item in $all) {{
         try {{
-            $name = $item.Current.Name
-            
-            # Try TextPattern
             $pattern = $item.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
             if ($pattern -ne $null) {{
                 $text = $pattern.DocumentRange.GetText(-1)
-                if ($text.Length -gt 10) {{
-                    if ($name -match "PowerShell|Command Prompt|Terminal|Console|Text Area") {{ Write-Host $text; exit 0 }}
-                    if ($text.Length -gt $bestText.Length) {{ $bestText = $text }}
+                $name = $item.Current.Name
+                if ($text.Length -gt 5) {{
+                    # If it's a known terminal container name, take it and exit
+                    if ($name -match "PowerShell|Command Prompt|Terminal|Console|Text Area") {{
+                        Write-Host $text
+                        exit 0
+                    }}
+                    # Otherwise, keep track of the longest text block found
+                    if ($text.Length -gt $bestText.Length) {{
+                        $bestText = $text
+                    }}
                 }}
             }}
-            
-            # Try ValuePattern fallback
-            $vPattern = $item.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-            if ($vPattern -ne $null) {{
-                $vText = $vPattern.Current.Value
-                if ($vText.Length -gt $bestText.Length) {{ $bestText = $vText }}
-            }}
-        }} catch {{}} 
+        }} catch {{}}
     }}
-    if ($bestText) {{ Write-Host $bestText; exit 0 }}
+    
+    if ($bestText.Length -gt 0) {{
+        Write-Host $bestText
+        exit 0
+    }}
 }}
-# If no text found, script will exit naturally with no output
-""".format(hwnd, pid)
+"""
         try:
             with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
                 tf.write(ps_content)
