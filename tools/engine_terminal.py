@@ -18,7 +18,7 @@ def load_config():
 def save_config(updates):
     if not os.path.exists(CONFIG_FILE): return
     with open(CONFIG_FILE, 'r') as f: full_cfg = json.load(f)
-    full_cfg.get("terminal", {}).update(updates)
+    full_cfg.setdefault("terminal", {}).update(updates)
     with open(CONFIG_FILE, 'w') as f: json.dump(full_cfg, f, indent=4)
 
 class TerminalEngine:
@@ -75,12 +75,10 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $targetTitle = "{0}"
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
-$element = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, 
-    (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $targetTitle)))
-if ($element -eq $null) {{
-    $all = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($item in $all) {{ if ($item.Current.Name -like "*$targetTitle*") {{ $element = $item; break }} }}
-}}
+
+$allChildren = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
+$element = $allChildren | Where-Object {{ $_.Current.Name -like "*$targetTitle*" }} | Select-Object -First 1
+
 if ($element -ne $null) {{
     $allDescendants = $element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
     $bestText = ""
@@ -94,16 +92,19 @@ if ($element -ne $null) {{
                     if ($text.Length -gt $bestText.Length -and $item.Current.Name -ne $targetTitle) {{ $bestText = $text }}
                 }}
             }}
-        }} catch {{}} 
+        }} catch {{}}
     }}
     if ($bestText) {{ Write-Host $bestText; exit 0 }}
 }}
 """.format(target_title)
         try:
-            with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf: tf.write(ps_content); temp_path = tf.name
+            with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
+                tf.write(ps_content)
+                temp_path = tf.name
             process = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", temp_path],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
-            out, _ = process.communicate()
+            out, err = process.communicate()
             if os.path.exists(temp_path): os.remove(temp_path)
             return out.decode('utf-8', errors='replace').strip()
-        except: return None
+        except:
+            return None

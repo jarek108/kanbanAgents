@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import engine_events
+import tempfile
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
 AGENT_DEFS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agent_definitions")
@@ -62,45 +63,31 @@ def get_roles():
     return [f.replace(".md", "") for f in os.listdir(AGENT_DEFS_DIR) if f.endswith(".md")]
 
 def launch_worker(project, role):
-
     title = f"Agent_{project['name']}_{role}"
-
     path = project['local_path']
-
     role_file = os.path.join(AGENT_DEFS_DIR, f"{role}.md")
-
     
-
-    # Try to find absolute path of 'gemini' to avoid 'File not found' in shells
-
     gemini_path = "gemini"
-
     try:
-
         gemini_path = subprocess.check_output(["where", "gemini"], text=True).strip().splitlines()[0]
-
     except:
-
         pass
 
+    if not os.path.splitext(gemini_path)[1]:
+        if os.path.exists(gemini_path + ".cmd"): gemini_path += ".cmd"
+        elif os.path.exists(gemini_path + ".exe"): gemini_path += ".exe"
 
+    # Use a temporary batch file to avoid shell quoting issues
+    with tempfile.NamedTemporaryFile(suffix=".bat", delete=False, mode='w') as tf:
+        tf.write(f"@echo off\n\"{gemini_path}\" --prompt \"{role_file}\"\n")
+        launch_bat = tf.name
 
-    cmd = f'"{gemini_path}" --prompt "{role_file}"'
-
+    # Direct CMD launch with title is the most reliable way to name a window
+    # that UIA can find immediately.
     try:
-
-        # If gemini is a batch file or needs a shell, cmd /k handles it.
-
-        # However, nested quotes in 'cmd /k "..."' can be tricky.
-
-        # Windows Terminal (wt) handles arguments as separate strings if provided as a list.
-
-        subprocess.Popen(["wt", "-d", path, "new-tab", "--title", title, "cmd", "/k", cmd])
-
-    except:
-
-        subprocess.Popen(f"start \"{title}\" /D \"{path}\" cmd /k \"{cmd}\"", shell=True)
-
+        subprocess.Popen(f'start "{title}" /D "{path}" cmd /k "{launch_bat}"', shell=True)
+    except Exception as e:
+        subprocess.Popen(["cmd", "/c", "start", title, "/D", path, "cmd", "/k", launch_bat], shell=True)
+    
     engine_events.emit("worker_launched", {"title": title, "project": project, "role": role})
-
     return title

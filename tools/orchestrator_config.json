@@ -15,7 +15,7 @@
     "terminal": {
         "sync_interval_ms": 1000,
         "auto_sync": true,
-        "last_title": "MyTerminal",
+        "last_title": "Agent_test_env_manager",
         "last_geometry": "1000x400",
         "git_refresh_ms": 3000
     },
@@ -32,6 +32,6 @@
         }
     ],
     "ui": {
-        "orch_geometry": "1100x700+231+78"
+        "orch_geometry": "1100x700+195+-986"
     }
 }
