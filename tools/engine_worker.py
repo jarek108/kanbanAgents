@@ -1,24 +1,24 @@
 import sys
 import time
 import argparse
-import client
+import engine_kanban
 
 def get_worker_tasks(project_id, worker_name):
-    tasks = client.get_tasks(project_id)
+    tasks = engine_kanban.get_tasks(project_id)
     if tasks is None: return {}
     worker_tasks = {}
     for task in tasks:
-        recipient = client.extract_recipient(task.get('description', ''))
+        recipient = engine_kanban.extract_recipient(task.get('description', ''))
         if recipient and worker_name.lower() in recipient.lower():
             if task.get('status') == 'inprogress':
                 worker_tasks[task['id']] = task['title']
     return worker_tasks
 
-def run_control_worker(worker_name, project_name=None, debug=False):
-    config = client.load_config()
-    project_name = project_name or config['last_project']
-    project_id = client.resolve_project_id(project_name)
-    interval = config['poll_interval']
+def run_control_worker(worker_name, project_name=None):
+    cfg = engine_kanban.load_config()
+    project_name = project_name or cfg.get('last_project')
+    project_id = engine_kanban.resolve_project_id(project_name)
+    interval = cfg.get('poll_interval', 1.0)
     
     print(f"Control Worker active for '{worker_name}' on project '{project_name}'...")
     

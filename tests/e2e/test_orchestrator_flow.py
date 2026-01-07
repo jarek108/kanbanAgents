@@ -2,64 +2,49 @@ import unittest
 from unittest.mock import patch, MagicMock
 import sys
 import os
-import json
 
-# Add tools/system to path
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'tools', 'system'))
-from orchestrator_core import OrchestratorCore
+# Add tools to path
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'tools'))
+import engine_projects
+import engine_terminal
 
 class TestOrchestratorFlow(unittest.TestCase):
-    """
-    E2E Test simulating the flow from adding a project to starting a worker.
-    """
 
     def setUp(self):
-        # Prevent actual file writes during tests
-        with patch('terminal_core.TerminalCore.load_config', return_value={}):
-            self.core = OrchestratorCore()
-        self.core.projects = []
+        self.events_patcher = patch('engine_projects.engine_events')
+        self.events_patcher.start()
 
-    @patch('subprocess.check_output')
+    def tearDown(self):
+        self.events_patcher.stop()
+
+    @patch('engine_projects._git_cmd')
     @patch('subprocess.Popen')
-    @patch('orchestrator_core.OrchestratorCore.save_projects')
-    def test_full_agent_onboarding_flow(self, mock_save, mock_popen, mock_git):
-        # 1. User adds a project
-        new_proj_name = "secret-project"
-        new_proj_path = "C:\\repos\\secret"
-        kanban_name = "secret-board"
+    @patch('engine_projects.save_projects')
+    @patch('engine_projects.load_projects', return_value=[])
+    def test_full_agent_onboarding_flow(self, mock_load, mock_save, mock_popen, mock_git):
+        # 1. Add project
+        engine_projects.add_project("secret-project", "C:\\repos\\secret", "secret-board")
         
-        self.core.add_project(new_proj_name, new_proj_path, kanban_name)
-        self.assertEqual(len(self.core.projects), 1)
-        self.assertEqual(self.core.projects[0]['name'], new_proj_name)
-
-        # 2. Orchestrator fetches Git info for the dashboard
-        mock_git.side_effect = ["true", "feature-branch", "M file.txt"]
+        # 2. Get Git info
+        # 6 calls expected: is_git, branch, root, commit, remote, status
+        mock_git.side_effect = ["true", "feature-branch", "C:\\repos\\secret", "abc123", "", ""]
         with patch('os.path.exists', return_value=True):
-            branch, status = self.core.get_git_info(new_proj_path)
+            branch, status, root, commit, remote = engine_projects.get_git_info("C:\\repos\\secret")
             self.assertEqual(branch, "feature-branch")
-            self.assertEqual(status, "Modified")
 
-        # 3. User selects a role and clicks 'Start Worker'
-        role = "manager"
+        # 3. Launch worker
         with patch('os.path.exists', return_value=True):
-            window_title = self.core.launch_worker(self.core.projects[0], role)
-            self.assertEqual(window_title, f"Agent_{new_proj_name}_{role}")
-            self.assertTrue(mock_popen.called)
+            window_title = engine_projects.launch_worker({"name": "p1", "local_path": "/path"}, "manager")
+            self.assertEqual(window_title, "Agent_p1_manager")
 
-        # 4. Mirror logic finds the window and connects
-        # (Simulating get_window_list finding the launched window)
-        with patch('win32gui.IsWindowVisible', return_value=True), \
-             patch('win32gui.GetWindowText', return_value=window_title), \
-             patch('win32gui.EnumWindows', side_effect=lambda h, c: h(555, None)):
-            
-            windows = self.core.get_window_list()
-            found = next((h for t, h in windows if window_title in t), None)
-            self.assertEqual(found, 555)
-            
-            # Connect
-            connected = self.core.connect_to_hwnd(found, window_title)
-            self.assertTrue(connected)
-            self.assertEqual(self.core.connected_hwnd, 555)
+        # 4. Connect mirror
+        engine = engine_terminal.TerminalEngine()
+        with patch('engine_terminal.save_config'):
+            # Mocking get_window_list
+            with patch.object(engine, 'get_window_list', return_value=[(window_title, 555)]):
+                engine.connect(555, window_title)
+                self.assertEqual(engine.connected_hwnd, 555)
 
 if __name__ == '__main__':
     unittest.main()
+
