@@ -1,0 +1,14 @@
+# Terminal Capture Strategy Analysis
+
+## Methods Already Attempted
+*   **Win32 `WM_GETTEXT`**: Failed; modern terminals don't store buffer text in standard window properties.
+*   **Keyboard/Mouse Automation (`pyautogui`)**: 
+    *   Pros: High compatibility.
+    *   Cons: Steals focus, disrupts user input, causes flashing, requires window visibility/foreground.
+*   **Menu Shortcuts (`Alt+Space`)**: Failed/Disruptive; relies on legacy menu structures.
+
+## Alternative Option: Windows UI Automation (UIA)
+Windows has a modern accessibility framework (UIA) that applications like Windows Terminal use to expose content to screen readers.
+*   **Pros**: Background capture. Does not require the window to be in foreground. No flashing/selection artifacts. Does not use the clipboard.
+*   **Cons**: Requires tree traversal of the UI structure.
+*   **Feasibility**: Very high for Windows Terminal and VS Code terminals.

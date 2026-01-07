@@ -3,8 +3,12 @@ Worker Dispatcher Script.
 Triggers a 'start' signal when a specific worker is assigned to tasks.
 """
 import sys
+import os
 import time
 import argparse
+# Add parent and kanban folder to path to allow importing get_tasks
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'kanban'))
 import get_tasks
 import urllib.request
 import json
