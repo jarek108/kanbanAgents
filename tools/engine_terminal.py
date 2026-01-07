@@ -113,29 +113,15 @@ if ($elements -ne $null -and $elements.Count -gt 0) {{
         exit 0
     }}
 }}
-""".format(hwnd, pid)
-try:
-    with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
-        tf.write(ps_content)
-        temp_path = tf.name
-    process = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", temp_path],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
-    out, err = process.communicate()
-    if os.path.exists(temp_path): os.remove(temp_path)
-    return out.decode('utf-8', errors='replace').strip()
-except:
-    return None
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python engine_terminal.py [Window_Title_Part]")
-        sys.exit(1)
-    
-    query = sys.argv[1]
-    engine = TerminalEngine()
-    print(f"Searching for '{query}'...")
-    content = engine.get_buffer_text_by_title(query)
-    print("-" * 40)
-    print(content)
-    print("-" * 40)
+"""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
+                tf.write(ps_content)
+                temp_path = tf.name
+            process = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", temp_path],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+            out, err = process.communicate()
+            if os.path.exists(temp_path): os.remove(temp_path)
+            return out.decode('utf-8', errors='replace').strip()
+        except:
+            return None
