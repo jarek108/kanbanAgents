@@ -195,8 +195,31 @@ class OrchestratorUI:
 
     def start_worker(self):
         if not self.active_project: return
-        title = engine_projects.launch_worker(self.active_project, self.role_var.get())
-        self.root.after(1500, lambda: self.connect_by_title(title))
+        title, pid = engine_projects.launch_worker(self.active_project, self.role_var.get())
+        
+        # Auto-connect mirror after a short delay
+        if pid:
+            self.root.after(1500, lambda: self.connect_by_pid(pid, title))
+        else:
+            self.root.after(1500, lambda: self.connect_by_title(title))
+
+    def connect_by_pid(self, target_pid, fallback_title):
+        import win32process
+        found_h = None
+        
+        def enum_handler(hwnd, ctx):
+            nonlocal found_h
+            if win32gui.IsWindowVisible(hwnd):
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                if pid == target_pid:
+                    found_h = hwnd
+
+        win32gui.EnumWindows(enum_handler, None)
+        if found_h:
+            self.connect_to_hwnd(found_h, fallback_title)
+        else:
+            # Fallback to title search
+            self.connect_by_title(fallback_title)
 
     def connect_by_title(self, title):
         for t, h in self.terminal.get_window_list():

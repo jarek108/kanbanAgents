@@ -76,18 +76,28 @@ def launch_worker(project, role):
     if not os.path.splitext(gemini_path)[1]:
         if os.path.exists(gemini_path + ".cmd"): gemini_path += ".cmd"
         elif os.path.exists(gemini_path + ".exe"): gemini_path += ".exe"
-
-    # Use a temporary batch file to avoid shell quoting issues
-    with tempfile.NamedTemporaryFile(suffix=".bat", delete=False, mode='w') as tf:
-        tf.write(f"@echo off\n\"{gemini_path}\" --prompt \"{role_file}\"\n")
-        launch_bat = tf.name
-
-    # Direct CMD launch with title is the most reliable way to name a window
-    # that UIA can find immediately.
-    try:
-        subprocess.Popen(f'start "{title}" /D "{path}" cmd /k "{launch_bat}"', shell=True)
-    except Exception as e:
-        subprocess.Popen(["cmd", "/c", "start", title, "/D", path, "cmd", "/k", launch_bat], shell=True)
     
-    engine_events.emit("worker_launched", {"title": title, "project": project, "role": role})
-    return title
+    # Use a temporary batch file to avoid shell quoting issues
+    # Use delete=False because the file must exist when the new terminal starts
+    tf = tempfile.NamedTemporaryFile(suffix=".bat", delete=False, mode='w')
+    # Use 'call' for gemini.cmd to prevent early exit of the batch file
+    # Use positional argument for prompt to avoid deprecation warning
+    bat_content = f"@echo off\ntitle {title}\ncall \"{gemini_path}\" \"{role_file}\"\n"
+    tf.write(bat_content)
+    tf.close() # Close to flush but don't delete
+    launch_bat = tf.name
+
+    print(f"[DEBUG] Launching via batch: {launch_bat}")
+    # Launch directly via cmd /k to get a trackable PID
+    try:
+        # We don't use 'start' here so we keep the process handle
+        proc = subprocess.Popen(["cmd", "/k", launch_bat], cwd=path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        pid = proc.pid
+    except Exception as e:
+        print(f"[DEBUG] Direct launch failed: {e}")
+        # Fallback to start
+        subprocess.Popen(f'start "{title}" /D "{path}" cmd /k "{launch_bat}"', shell=True)
+        pid = None
+    
+    engine_events.emit("worker_launched", {"title": title, "project": project, "role": role, "pid": pid})
+    return title, pid
