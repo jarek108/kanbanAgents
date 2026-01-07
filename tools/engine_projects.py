@@ -72,41 +72,45 @@ def get_roles():
     return [f.replace(".md", "") for f in os.listdir(AGENT_DEFS_DIR) if f.endswith(".md")]
 
 def launch_worker(project, role):
-    title = f"Agent_{project['name']}_{role}"
-    path = project['local_path']
-    role_file = os.path.join(AGENT_DEFS_DIR, f"{role}.md")
-    
-    gemini_path = "gemini"
-    try:
-        gemini_path = subprocess.check_output(["where", "gemini"], text=True).strip().splitlines()[0]
-    except:
-        pass
 
-    if not os.path.splitext(gemini_path)[1]:
-        if os.path.exists(gemini_path + ".cmd"): gemini_path += ".cmd"
-        elif os.path.exists(gemini_path + ".exe"): gemini_path += ".exe"
+    title = f"Agent_{project['name']}_{role}"
+
+    path = project['local_path']
+
     
-    # Use a temporary batch file to avoid shell quoting issues
-    # Use delete=False because the file must exist when the new terminal starts
+
+    # Use a temporary batch file to set the title and remain open
+
     tf = tempfile.NamedTemporaryFile(suffix=".bat", delete=False, mode='w')
-    # Use 'call' for gemini.cmd to prevent early exit of the batch file
-    # Use positional argument for prompt to avoid deprecation warning
-    bat_content = f"@echo off\ntitle {title}\ncall \"{gemini_path}\" \"{role_file}\"\n"
+
+    bat_content = f"@echo off\ntitle {title}\ncmd /k\n"
+
     tf.write(bat_content)
-    tf.close() # Close to flush but don't delete
+
+    tf.close()
+
     launch_bat = tf.name
 
-    print(f"[DEBUG] Launching via batch: {launch_bat}")
-    # Launch directly via cmd /k to get a trackable PID
+
+
+    print(f"[DEBUG] Launching empty terminal: {title}")
+
     try:
-        # We don't use 'start' here so we keep the process handle
+
         proc = subprocess.Popen(["cmd", "/k", launch_bat], cwd=path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+
         pid = proc.pid
+
     except Exception as e:
+
         print(f"[DEBUG] Direct launch failed: {e}")
-        # Fallback to start
+
         subprocess.Popen(f'start "{title}" /D "{path}" cmd /k "{launch_bat}"', shell=True)
+
         pid = None
+
     
+
     engine_events.emit("worker_launched", {"title": title, "project": project, "role": role, "pid": pid})
+
     return title, pid
