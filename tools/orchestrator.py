@@ -156,13 +156,15 @@ class OrchestratorUI:
         chk_mirror.pack(side=tk.LEFT, padx=5)
         ToolTip(chk_mirror, "Enable/Disable background UIA text capture for the terminal.")
 
-        self.output_visible = tk.BooleanVar(value=False)
-        self.toggle_output_btn = ttk.Button(mirror_bar, text="▼ Show Live", command=self.toggle_output_panel)
+        self.output_visible = tk.BooleanVar(value=True)
+        self.toggle_output_btn = ttk.Button(mirror_bar, text="▲ Hide Live", command=self.toggle_output_panel)
         self.toggle_output_btn.pack(side=tk.RIGHT, padx=5)
         ToolTip(self.toggle_output_btn, "Toggle visibility of the terminal buffer mirror.")
 
         # --- TERMINAL MIRROR ---
         self.display_frame = ttk.LabelFrame(self.main_container, text=" Terminal Mirror ", padding="5")
+        self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
+        
         self.terminal_display = scrolledtext.ScrolledText(
             self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
             padx=10, pady=10, borderwidth=0, highlightthickness=0
