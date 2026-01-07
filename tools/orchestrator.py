@@ -316,7 +316,9 @@ class OrchestratorUI:
     def connect_to_hwnd(self, hwnd, title):
         if self.terminal.connect(hwnd, title):
             self.status_icon.config(fg="green"); self.status_label.config(text=f"Mirroring: {title[:20]}...")
-            if not self.is_syncing: self.is_syncing = True; self.periodic_sync()
+            if not self.is_syncing:
+                self.is_syncing = True
+                threading.Thread(target=self._uia_sync_loop, daemon=True).start()
 
     def toggle_output_panel(self):
         if self.output_visible.get():
@@ -328,15 +330,17 @@ class OrchestratorUI:
     def toggle_auto_sync(self): 
         self.full_config["terminal"]["auto_sync"] = self.auto_sync_var.get(); self._save_full_config()
 
-    def periodic_sync(self):
-        if self.auto_sync_var.get() and self.terminal.connected_title:
-            threading.Thread(target=self._uia_sync_thread, daemon=True).start()
-        ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
-        self.root.after(ms, self.periodic_sync)
-
-    def _uia_sync_thread(self):
-        content = self.terminal.get_buffer_text()
-        if content: self.root.after(0, self.update_display, content)
+    def _uia_sync_loop(self):
+        """Persistent background thread for mirroring."""
+        import time
+        while self.is_syncing:
+            if self.auto_sync_var.get() and self.terminal.connected_hwnd:
+                content = self.terminal.get_buffer_text()
+                if content:
+                    self.root.after(0, self.update_display, content)
+            
+            ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
+            time.sleep(ms / 1000.0)
 
     def update_display(self, content):
         self.terminal_display.config(state='normal'); self.terminal_display.delete('1.0', tk.END)
