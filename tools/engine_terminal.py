@@ -71,6 +71,16 @@ class TerminalEngine:
             return content
         finally: self.capture_lock.release()
 
+    def get_buffer_text_by_title(self, title_query):
+        """Finds a window by title and returns its buffer text once."""
+        windows = self.get_window_list()
+        target = next((h for t, h in windows if title_query.lower() in t.lower()), None)
+        if not target:
+            return f"Error: Window containing '{title_query}' not found."
+        
+        _, pid = win32process.GetWindowThreadProcessId(target)
+        return self._execute_uia_capture(target, pid)
+
     def _execute_uia_capture(self, hwnd, pid):
         ps_content = r"""
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -117,7 +127,7 @@ if ($element -ne $null) {{
         exit 0
     }}
 }}
-"""
+""".format(hwnd)
         try:
             with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tf:
                 tf.write(ps_content)
@@ -129,3 +139,17 @@ if ($element -ne $null) {{
             return out.decode('utf-8', errors='replace').strip()
         except:
             return None
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python engine_terminal.py [Window_Title_Part]")
+        sys.exit(1)
+    
+    query = sys.argv[1]
+    engine = TerminalEngine()
+    print(f"Searching for '{query}'...")
+    content = engine.get_buffer_text_by_title(query)
+    print("-" * 40)
+    print(content)
+    print("-" * 40)
