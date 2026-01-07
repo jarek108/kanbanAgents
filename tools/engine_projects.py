@@ -79,25 +79,15 @@ def launch_worker(project, role):
 
     
 
-    # Use a temporary batch file to set the title and remain open
+    print(f"[DEBUG] Launching direct terminal: {title}")
 
-    tf = tempfile.NamedTemporaryFile(suffix=".bat", delete=False, mode='w')
+    # We use cmd /k title {title} to set the name and stay open.
 
-    bat_content = f"@echo off\ntitle {title}\ncmd /k\n"
-
-    tf.write(bat_content)
-
-    tf.close()
-
-    launch_bat = tf.name
-
-
-
-    print(f"[DEBUG] Launching empty terminal: {title}")
+    # CREATE_NEW_CONSOLE ensures it's a separate window.
 
     try:
 
-        proc = subprocess.Popen(["cmd", "/k", launch_bat], cwd=path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        proc = subprocess.Popen(["cmd", "/k", f"title {title}"], cwd=path, creationflags=subprocess.CREATE_NEW_CONSOLE)
 
         pid = proc.pid
 
@@ -105,7 +95,9 @@ def launch_worker(project, role):
 
         print(f"[DEBUG] Direct launch failed: {e}")
 
-        subprocess.Popen(f'start "{title}" /D "{path}" cmd /k "{launch_bat}"', shell=True)
+        # Fallback to 'start' which also handles titles well
+
+        subprocess.Popen(f'start "{title}" /D "{path}" cmd /k', shell=True)
 
         pid = None
 
@@ -114,3 +106,5 @@ def launch_worker(project, role):
     engine_events.emit("worker_launched", {"title": title, "project": project, "role": role, "pid": pid})
 
     return title, pid
+
+
