@@ -85,21 +85,26 @@ if ($element -ne $null) {{
     # Enumerate all descendants and find the best text source
     $all = $element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
     $bestText = ""
+    $windowTitle = $element.Current.Name
     
     foreach ($item in $all) {{
         try {{
             $pattern = $item.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
             if ($pattern -ne $null) {{
                 $text = $pattern.DocumentRange.GetText(-1)
+                $trimmed = $text.Trim()
                 $name = $item.Current.Name
-                if ($text.Length -gt 5) {{
-                    # If it's a known terminal container name, take it and exit
-                    if ($name -match "PowerShell|Command Prompt|Terminal|Console|Text Area") {{
+                
+                # Logic: We want long text that isn't just the window title or shell name
+                if ($trimmed.Length -gt 5) {{
+                    # If it's significantly long, it's likely the buffer
+                    if ($trimmed.Length -gt 50) {{
                         Write-Host $text
                         exit 0
                     }}
-                    # Otherwise, keep track of the longest text block found
-                    if ($text.Length -gt $bestText.Length) {{
+                    
+                    # If it's not the window title and longer than what we have, keep it
+                    if ($trimmed -ne $windowTitle -and $name -ne $windowTitle -and $trimmed.Length -gt $bestText.Length) {{
                         $bestText = $text
                     }}
                 }}

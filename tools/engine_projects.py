@@ -35,6 +35,15 @@ def delete_project(name):
     save_projects(projects)
     engine_events.emit("project_deleted", name)
 
+def get_kanban_url(project_name):
+    """Returns the web URL for a kanban project."""
+    import engine_kanban
+    cfg = engine_kanban.load_config()
+    # Assuming web UI is at same IP/Port
+    base = f"http://{cfg['ip']}:{cfg['port']}"
+    pid = engine_kanban.resolve_project_id(project_name)
+    return f"{base}/projects/{pid}"
+
 def get_git_info(path):
     if not os.path.exists(path): return "Path not found", "", "", "", ""
     try:

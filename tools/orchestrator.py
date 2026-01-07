@@ -4,10 +4,37 @@ import threading
 import os
 import json
 import webbrowser
+import win32gui
+import win32process
 import engine_terminal
 import engine_kanban
 import engine_projects
 import engine_events
+
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        widget.bind("<Enter>", self.show_tip)
+        widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text: return
+        x, y, _, cy = self.widget.bbox("insert") if hasattr(self.widget, "bbox") and self.widget.bbox("insert") else (0,0,0,0)
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT, background="#2d2d2d", foreground="#d4d4d4",
+                      relief=tk.SOLID, borderwidth=1, font=("Segoe UI", "9", "normal"), padx=5, pady=3)
+        label.pack()
+
+    def hide_tip(self, event=None):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw: tw.destroy()
 
 class OrchestratorUI:
     def __init__(self, root):
@@ -16,7 +43,7 @@ class OrchestratorUI:
         
         # Load main config for UI state
         self.full_config = self._load_full_config()
-        self.root.geometry(self.full_config.get("ui", {}).get("orch_geometry", "1100x700"))
+        self.root.geometry(self.full_config.get("ui", {}).get("orch_geometry", "1200x750"))
         self.root.configure(bg="#1e1e1e")
         
         self.terminal = engine_terminal.TerminalEngine()
@@ -42,13 +69,9 @@ class OrchestratorUI:
             with open(cfg_path, 'r') as f: return json.load(f)
         return {}
 
-    def _save_ui_config(self):
+    def _save_full_config(self):
         cfg_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
-        if os.path.exists(cfg_path):
-            with open(cfg_path, 'r') as f: full_cfg = json.load(f)
-            if "ui" not in full_cfg: full_cfg["ui"] = {}
-            full_cfg["ui"]["orch_geometry"] = self.root.geometry()
-            with open(cfg_path, 'w') as f: json.dump(full_cfg, f, indent=4)
+        with open(cfg_path, 'w') as f: json.dump(self.full_config, f, indent=4)
 
     def setup_styles(self):
         self.style = ttk.Style()
@@ -58,7 +81,7 @@ class OrchestratorUI:
         self.style.configure("TButton", padding=3, font=("Segoe UI", 9))
         self.style.configure("Header.TFrame", background="#2d2d2d")
         self.style.configure("Header.TLabel", background="#2d2d2d", font=("Segoe UI", 9, "bold"))
-        self.style.configure("Info.TLabel", background="#1e1e1e", foreground="#569cd6", font=("Segoe UI", 9, "italic"))
+        self.style.configure("Info.TLabel", background="#2d2d2d", foreground="#569cd6", font=("Segoe UI", 9, "italic"))
         self.style.configure("TLabelframe", background="#1e1e1e", foreground="#007acc", font=("Segoe UI", 9, "bold"))
         self.style.configure("TLabelframe.Label", background="#1e1e1e", foreground="#007acc")
 
@@ -66,38 +89,58 @@ class OrchestratorUI:
         self.main_container = ttk.Frame(self.root, padding="15")
         self.main_container.pack(fill=tk.BOTH, expand=True)
 
-        # --- PROJECT BAR ---
+        # --- CONSOLIDATED PROJECT & STATUS BAR ---
         proj_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="10")
         proj_bar.pack(fill=tk.X, pady=(0, 10))
 
-        ttk.Label(proj_bar, text="Project:", style="Header.TLabel").pack(side=tk.LEFT, padx=(0, 5))
+        lbl_active = ttk.Label(proj_bar, text="Active Project:", style="Header.TLabel")
+        lbl_active.pack(side=tk.LEFT, padx=(0, 5))
+        ToolTip(lbl_active, "The current workspace folder. All agent commands will execute in this path.")
+
         self.project_var = tk.StringVar()
-        self.project_dropdown = ttk.Combobox(proj_bar, textvariable=self.project_var, state="readonly", width=30)
+        self.project_dropdown = ttk.Combobox(proj_bar, textvariable=self.project_var, state="readonly", width=25)
         self.project_dropdown['values'] = [p['name'] for p in engine_projects.load_projects()]
         self.project_dropdown.pack(side=tk.LEFT, padx=5)
         self.project_dropdown.bind("<<ComboboxSelected>>", self.on_project_select)
+        ToolTip(self.project_dropdown, "Switch between registered Git projects.")
 
-        ttk.Button(proj_bar, text="+ Add", command=self.open_add_project_popup).pack(side=tk.LEFT, padx=10)
-        ttk.Button(proj_bar, text="Manage", command=self.open_edit_projects_popup).pack(side=tk.LEFT)
+        self.git_label = ttk.Label(proj_bar, text="Git: --", style="Info.TLabel")
+        self.git_label.pack(side=tk.LEFT, padx=(15, 10))
+        ToolTip(self.git_label, "Live branch name and local file status (Clean/Modified).")
 
-        # --- INFO PANEL ---
-        info_frame = ttk.Frame(self.main_container, padding="5")
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-        self.git_label = ttk.Label(info_frame, text="Git: --", style="Info.TLabel")
-        self.git_label.pack(side=tk.LEFT, padx=(0, 20))
-        self.kanban_label = ttk.Label(info_frame, text="Kanban: --", style="Info.TLabel")
-        self.kanban_label.pack(side=tk.LEFT)
+        self.kanban_label = ttk.Label(proj_bar, text="Kanban: --", style="Info.TLabel")
+        self.kanban_label.pack(side=tk.LEFT, padx=(0, 15))
+        ToolTip(self.kanban_label, "The associated Kanban board project name.")
+
+        btn_add = ttk.Button(proj_bar, text="+ Add Project", command=self.open_add_project_popup)
+        btn_add.pack(side=tk.LEFT, padx=5)
+        ToolTip(btn_add, "Register a new Git repository folder to the orchestrator.")
+
+        btn_manage = ttk.Button(proj_bar, text="Manage", command=self.open_edit_projects_popup)
+        btn_manage.pack(side=tk.LEFT, padx=5)
+        ToolTip(btn_manage, "Open the project registry table to edit or remove projects.")
+
+        btn_settings = ttk.Button(proj_bar, text="Settings", command=self.open_settings_popup)
+        btn_settings.pack(side=tk.RIGHT, padx=5)
+        ToolTip(btn_settings, "Configure global API connections and mirroring behavior.")
 
         # --- ORCHESTRATION ---
         worker_bar = ttk.LabelFrame(self.main_container, text=" Agent Control ", padding="10")
         worker_bar.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(worker_bar, text="Role:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        lbl_role = ttk.Label(worker_bar, text="Role:")
+        lbl_role.pack(side=tk.LEFT, padx=(0, 5))
+        ToolTip(lbl_role, "The personality/prompt template the agent will use (Manager, Coder, QA).")
+
         self.role_var = tk.StringVar()
         self.role_dropdown = ttk.Combobox(worker_bar, textvariable=self.role_var, state="readonly", width=15)
         self.role_dropdown['values'] = engine_projects.get_roles()
         if self.role_dropdown['values']: self.role_dropdown.current(0)
         self.role_dropdown.pack(side=tk.LEFT, padx=5)
-        ttk.Button(worker_bar, text="Spawn Worker", command=self.start_worker).pack(side=tk.LEFT, padx=15)
+
+        btn_spawn = ttk.Button(worker_bar, text="Spawn Worker", command=self.start_worker)
+        btn_spawn.pack(side=tk.LEFT, padx=15)
+        ToolTip(btn_spawn, "Launches a new Gemini CLI instance in the project folder with the selected role.")
 
         # --- MIRROR HEADER ---
         mirror_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="5")
@@ -106,12 +149,17 @@ class OrchestratorUI:
         self.status_icon.pack(side=tk.LEFT)
         self.status_label = ttk.Label(mirror_bar, text="Disconnected", style="Header.TLabel")
         self.status_label.pack(side=tk.LEFT, padx=(2, 15))
+        
         self.auto_sync_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(mirror_bar, text="Mirroring", variable=self.auto_sync_var, bg="#2d2d2d", fg="#d4d4d4", 
-                       selectcolor="#1e1e1e", activebackground="#2d2d2d", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=5)
+        chk_mirror = tk.Checkbutton(mirror_bar, text="Mirroring", variable=self.auto_sync_var, bg="#2d2d2d", fg="#d4d4d4", 
+                       selectcolor="#1e1e1e", activebackground="#2d2d2d", font=("Segoe UI", 9), command=self.toggle_auto_sync)
+        chk_mirror.pack(side=tk.LEFT, padx=5)
+        ToolTip(chk_mirror, "Enable/Disable background UIA text capture for the terminal.")
+
         self.output_visible = tk.BooleanVar(value=False)
         self.toggle_output_btn = ttk.Button(mirror_bar, text="▼ Show Live", command=self.toggle_output_panel)
         self.toggle_output_btn.pack(side=tk.RIGHT, padx=5)
+        ToolTip(self.toggle_output_btn, "Toggle visibility of the terminal buffer mirror.")
 
         # --- TERMINAL MIRROR ---
         self.display_frame = ttk.LabelFrame(self.main_container, text=" Terminal Mirror ", padding="5")
@@ -127,6 +175,15 @@ class OrchestratorUI:
         self.cmd_entry = ttk.Entry(self.cmd_frame)
         self.cmd_entry.pack(fill=tk.X, expand=True, padx=5)
         self.cmd_entry.bind("<Return>", self.send_command)
+        ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
+
+    def _center_popup(self, popup, width, height):
+        self.root.update_idletasks()
+        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - (width // 2)
+        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - (height // 2)
+        popup.geometry(f"{width}x{height}+{px}+{py}")
+        popup.transient(self.root)
+        popup.grab_set()
 
     def on_project_select(self, event=None):
         name = self.project_var.get()
@@ -145,8 +202,8 @@ class OrchestratorUI:
     def open_add_project_popup(self):
         folder = filedialog.askdirectory(initialdir=os.getcwd(), title="Select Project Folder")
         if not folder: return
-        popup = tk.Toplevel(self.root); popup.title("Project Details"); popup.geometry("500x300")
-        popup.configure(bg="#1e1e1e"); popup.transient(self.root); popup.grab_set()
+        popup = tk.Toplevel(self.root); popup.title("Project Details")
+        self._center_popup(popup, 500, 300)
         frame = ttk.Frame(popup, padding="20"); frame.pack(fill=tk.BOTH, expand=True)
         ttk.Label(frame, text="Name (Alias):").pack(fill=tk.X)
         name_entry = ttk.Entry(frame); name_entry.insert(0, os.path.basename(folder)); name_entry.pack(fill=tk.X, pady=(0, 10))
@@ -160,8 +217,8 @@ class OrchestratorUI:
         ttk.Button(frame, text="Save Project", command=on_save).pack()
 
     def open_edit_projects_popup(self):
-        popup = tk.Toplevel(self.root); popup.title("Manage Projects"); popup.geometry("1100x500")
-        popup.configure(bg="#1e1e1e"); popup.transient(self.root); popup.grab_set()
+        popup = tk.Toplevel(self.root); popup.title("Manage Projects")
+        self._center_popup(popup, 1100, 500)
         main_frame = ttk.Frame(popup, padding="15"); main_frame.pack(fill=tk.BOTH, expand=True)
         cols = ("name", "path", "kanban", "repo", "branch", "commit")
         tree = ttk.Treeview(main_frame, columns=cols, show="headings")
@@ -173,8 +230,10 @@ class OrchestratorUI:
             for i in tree.get_children(): tree.delete(i)
             for p in engine_projects.load_projects():
                 b, s, r, c, rem = engine_projects.get_git_info(p['local_path'])
+                kb_url = engine_projects.get_kanban_url(p['kanban_project_name'])
                 iid = tree.insert("", tk.END, values=(p['name'], p['local_path'], p['kanban_project_name'], os.path.basename(r) if r else "N/A", f"{b} ({s})", c), tags=("link",))
                 links[(iid, "path")] = p['local_path']
+                links[(iid, "kanban")] = kb_url
                 if rem: links[(iid, "repo")] = rem
                 if rem and c: links[(iid, "commit")] = f"{rem}/commit/{c}"
         def on_db(e):
@@ -193,33 +252,60 @@ class OrchestratorUI:
                     refresh()
         ttk.Button(popup, text="Remove Selected", command=on_del).pack(side=tk.RIGHT, padx=15, pady=10)
 
+    def open_settings_popup(self):
+        popup = tk.Toplevel(self.root); popup.title("Global Settings")
+        self._center_popup(popup, 500, 600)
+        main = ttk.Frame(popup, padding=20); main.pack(fill=tk.BOTH, expand=True)
+        sections = ["kanban", "terminal"]
+        entries = {}
+        for section in sections:
+            ttk.Label(main, text=f"[{section.upper()}]", font=("Segoe UI", 10, "bold")).pack(fill=tk.X, pady=(10, 5))
+            for key, val in self.full_config.get(section, {}).items():
+                if isinstance(val, (str, int, float, bool)):
+                    f = ttk.Frame(main); f.pack(fill=tk.X, pady=2)
+                    label_text = key
+                    if key == "poll_interval": label_text = "poll_interval (s)"
+                    if key == "sync_interval_ms": label_text = "sync_interval (ms)"
+                    
+                    ttk.Label(f, text=f"{label_text}:", width=25).pack(side=tk.LEFT)
+                    e = ttk.Entry(f); e.insert(0, str(val)); e.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                    entries[(section, key)] = e
+        
+        def save():
+            try:
+                for (sec, key), entry in entries.items():
+                    orig_val = self.full_config[sec][key]
+                    new_val_str = entry.get()
+                    if type(orig_val) is bool:
+                        new_val = new_val_str.lower() in ("true", "1", "yes")
+                    elif isinstance(orig_val, int): new_val = int(new_val_str)
+                    elif isinstance(orig_val, float): new_val = float(new_val_str)
+                    else: new_val = new_val_str
+                    self.full_config[sec][key] = new_val
+                self._save_full_config()
+                popup.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Invalid value: {e}")
+        
+        ttk.Button(main, text="Save All", command=save).pack(pady=20)
+
     def start_worker(self):
         if not self.active_project: return
         title, pid = engine_projects.launch_worker(self.active_project, self.role_var.get())
-        
-        # Auto-connect mirror after a short delay
-        if pid:
-            self.root.after(1500, lambda: self.connect_by_pid(pid, title))
-        else:
-            self.root.after(1500, lambda: self.connect_by_title(title))
+        if pid: self.root.after(1500, lambda: self.connect_by_pid(pid, title))
+        else: self.root.after(1500, lambda: self.connect_by_title(title))
 
     def connect_by_pid(self, target_pid, fallback_title):
         import win32process
         found_h = None
-        
         def enum_handler(hwnd, ctx):
             nonlocal found_h
             if win32gui.IsWindowVisible(hwnd):
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                if pid == target_pid:
-                    found_h = hwnd
-
+                if pid == target_pid: found_h = hwnd
         win32gui.EnumWindows(enum_handler, None)
-        if found_h:
-            self.connect_to_hwnd(found_h, fallback_title)
-        else:
-            # Fallback to title search
-            self.connect_by_title(fallback_title)
+        if found_h: self.connect_to_hwnd(found_h, fallback_title)
+        else: self.connect_by_title(fallback_title)
 
     def connect_by_title(self, title):
         for t, h in self.terminal.get_window_list():
@@ -230,13 +316,6 @@ class OrchestratorUI:
             self.status_icon.config(fg="green"); self.status_label.config(text=f"Mirroring: {title[:20]}...")
             if not self.is_syncing: self.is_syncing = True; self.periodic_sync()
 
-    def toggle_connection(self):
-        if self.terminal.connected_hwnd:
-            self.terminal.disconnect(); self.status_icon.config(fg="red"); self.status_label.config(text="Disconnected")
-        else:
-            last = self.full_config.get("terminal", {}).get("last_title")
-            if last: self.connect_by_title(last)
-
     def toggle_output_panel(self):
         if self.output_visible.get():
             self.display_frame.pack_forget(); self.toggle_output_btn.config(text="▼ Show Live"); self.output_visible.set(False)
@@ -244,18 +323,13 @@ class OrchestratorUI:
             self.cmd_frame.pack_forget(); self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
             self.cmd_frame.pack(fill=tk.X, side=tk.TOP, pady=(5, 0)); self.toggle_output_btn.config(text="▲ Hide Live"); self.output_visible.set(True)
 
-    def update_sync_interval(self, event=None):
-        try:
-            v = int(self.sync_val_var.get())
-            engine_terminal.save_config({"sync_interval_ms": v})
-        except: pass
-
-    def toggle_auto_sync(self): engine_terminal.save_config({"auto_sync": self.auto_sync_var.get()})
+    def toggle_auto_sync(self): 
+        self.full_config["terminal"]["auto_sync"] = self.auto_sync_var.get(); self._save_full_config()
 
     def periodic_sync(self):
         if self.auto_sync_var.get() and self.terminal.connected_title:
             threading.Thread(target=self._uia_sync_thread, daemon=True).start()
-        ms = engine_terminal.load_config().get('sync_interval_ms', 1000)
+        ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
         self.root.after(ms, self.periodic_sync)
 
     def _uia_sync_thread(self):
@@ -271,7 +345,7 @@ class OrchestratorUI:
         if cmd and self.terminal.send_command(cmd): self.cmd_entry.delete(0, tk.END); self.root.focus_force()
 
     def on_closing(self):
-        self._save_ui_config(); self.root.destroy()
+        self.full_config["ui"]["orch_geometry"] = self.root.geometry(); self._save_full_config(); self.root.destroy()
 
 if __name__ == "__main__":
     root = tk.Tk(); app = OrchestratorUI(root); root.mainloop()
