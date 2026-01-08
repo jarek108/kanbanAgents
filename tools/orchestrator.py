@@ -4,6 +4,7 @@ import threading
 import os
 import json
 import webbrowser
+import time
 import win32gui
 import win32process
 import engine_terminal
@@ -49,17 +50,12 @@ class OrchestratorUI:
         self.terminal = engine_terminal.TerminalEngine()
         self.is_syncing = False
         self.active_project = None
+        self.workers = [] # Track active worker info
         
         self.setup_styles()
         self.setup_ui()
         
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        
-        # Load initial project
-        projects = engine_projects.load_projects()
-        if projects:
-            self.project_var.set(projects[0]['name'])
-            self.on_project_select()
         
         self.periodic_git_refresh()
 
@@ -93,54 +89,38 @@ class OrchestratorUI:
         proj_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="10")
         proj_bar.pack(fill=tk.X, pady=(0, 10))
 
-        lbl_active = ttk.Label(proj_bar, text="Active Project:", style="Header.TLabel")
-        lbl_active.pack(side=tk.LEFT, padx=(0, 5))
-        ToolTip(lbl_active, "The current workspace folder. All agent commands will execute in this path.")
-
-        self.project_var = tk.StringVar()
-        self.project_dropdown = ttk.Combobox(proj_bar, textvariable=self.project_var, state="readonly", width=25)
-        self.project_dropdown['values'] = [p['name'] for p in engine_projects.load_projects()]
-        self.project_dropdown.pack(side=tk.LEFT, padx=5)
-        self.project_dropdown.bind("<<ComboboxSelected>>", self.on_project_select)
-        ToolTip(self.project_dropdown, "Switch between registered Git projects.")
-
-        self.git_label = ttk.Label(proj_bar, text="Git: --", style="Info.TLabel")
-        self.git_label.pack(side=tk.LEFT, padx=(15, 10))
-        ToolTip(self.git_label, "Live branch name and local file status (Clean/Modified).")
-
-        self.kanban_label = ttk.Label(proj_bar, text="Kanban: --", style="Info.TLabel")
-        self.kanban_label.pack(side=tk.LEFT, padx=(0, 15))
-        ToolTip(self.kanban_label, "The associated Kanban board project name.")
-
         btn_add = ttk.Button(proj_bar, text="+ Add Project", command=self.open_add_project_popup)
         btn_add.pack(side=tk.LEFT, padx=5)
         ToolTip(btn_add, "Register a new Git repository folder to the orchestrator.")
 
-        btn_manage = ttk.Button(proj_bar, text="Manage", command=self.open_edit_projects_popup)
+        btn_manage = ttk.Button(proj_bar, text="Manage Projects", command=self.open_edit_projects_popup)
         btn_manage.pack(side=tk.LEFT, padx=5)
         ToolTip(btn_manage, "Open the project registry table to edit or remove projects.")
+
+        btn_spawn_popup = ttk.Button(proj_bar, text="🚀 Spawn New Worker", command=self.open_spawn_worker_popup)
+        btn_spawn_popup.pack(side=tk.LEFT, padx=15)
+        ToolTip(btn_spawn_popup, "Open a dialog to configure and launch a new agent worker.")
 
         btn_settings = ttk.Button(proj_bar, text="Settings", command=self.open_settings_popup)
         btn_settings.pack(side=tk.RIGHT, padx=5)
         ToolTip(btn_settings, "Configure global API connections and mirroring behavior.")
 
-        # --- ORCHESTRATION ---
-        worker_bar = ttk.LabelFrame(self.main_container, text=" Agent Control ", padding="10")
-        worker_bar.pack(fill=tk.X, pady=(0, 10))
+        # --- WORKER TRACKING TABLE ---
+        worker_table_frame = ttk.LabelFrame(self.main_container, text=" Active Workers ", padding="5")
+        worker_table_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        lbl_role = ttk.Label(worker_bar, text="Role:")
-        lbl_role.pack(side=tk.LEFT, padx=(0, 5))
-        ToolTip(lbl_role, "The personality/prompt template the agent will use (Manager, Coder, QA).")
-
-        self.role_var = tk.StringVar()
-        self.role_dropdown = ttk.Combobox(worker_bar, textvariable=self.role_var, state="readonly", width=15)
-        self.role_dropdown['values'] = engine_projects.get_roles()
-        if self.role_dropdown['values']: self.role_dropdown.current(0)
-        self.role_dropdown.pack(side=tk.LEFT, padx=5)
-
-        btn_spawn = ttk.Button(worker_bar, text="Spawn Worker", command=self.start_worker)
-        btn_spawn.pack(side=tk.LEFT, padx=15)
-        ToolTip(btn_spawn, "Launches a new Gemini CLI instance in the project folder with the selected role.")
+        cols = ("role", "folder", "kanban", "time", "terminal")
+        self.worker_tree = ttk.Treeview(worker_table_frame, columns=cols, show="headings", height=8)
+        self.worker_tree.heading("role", text="Role")
+        self.worker_tree.heading("folder", text="Project Folder")
+        self.worker_tree.heading("kanban", text="Project Kanban")
+        self.worker_tree.heading("time", text="Task Time")
+        self.worker_tree.heading("terminal", text="Terminal")
+        
+        for c in cols: self.worker_tree.column(c, width=100)
+        self.worker_tree.column("folder", width=250)
+        self.worker_tree.column("kanban", width=150)
+        self.worker_tree.pack(fill=tk.BOTH, expand=True)
 
         # --- MIRROR HEADER ---
         mirror_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="5")
@@ -156,14 +136,16 @@ class OrchestratorUI:
         chk_mirror.pack(side=tk.LEFT, padx=5)
         ToolTip(chk_mirror, "Enable/Disable background UIA text capture for the terminal.")
 
-        self.output_visible = tk.BooleanVar(value=True)
-        self.toggle_output_btn = ttk.Button(mirror_bar, text="▲ Hide Live", command=self.toggle_output_panel)
+        self.output_visible = tk.BooleanVar(value=self.full_config.get("ui", {}).get("show_terminal", True))
+        self.toggle_output_btn = ttk.Button(mirror_bar, text="▲ Hide Live" if self.output_visible.get() else "▼ Show Live", 
+                                          command=self.toggle_output_panel)
         self.toggle_output_btn.pack(side=tk.RIGHT, padx=5)
         ToolTip(self.toggle_output_btn, "Toggle visibility of the terminal buffer mirror.")
 
         # --- TERMINAL MIRROR ---
         self.display_frame = ttk.LabelFrame(self.main_container, text=" Terminal Mirror ", padding="5")
-        self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
+        if self.output_visible.get():
+            self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
         
         self.terminal_display = scrolledtext.ScrolledText(
             self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
@@ -187,17 +169,64 @@ class OrchestratorUI:
         popup.transient(self.root)
         popup.grab_set()
 
-    def on_project_select(self, event=None):
-        name = self.project_var.get()
+    def open_spawn_worker_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.title("Spawn New Worker")
+        self._center_popup(popup, 500, 400)
+        
+        frame = ttk.Frame(popup, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Project Selection
+        ttk.Label(frame, text="Select Project:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
         projects = engine_projects.load_projects()
-        self.active_project = next((p for p in projects if p['name'] == name), None)
-        if self.active_project:
-            branch, status, _, _, _ = engine_projects.get_git_info(self.active_project['local_path'])
-            self.git_label.config(text=f"Git: [{branch}] {status}")
-            self.kanban_label.config(text=f"Kanban: {self.active_project['kanban_project_name']}")
+        project_names = [p['name'] for p in projects]
+        
+        proj_var = tk.StringVar()
+        proj_dropdown = ttk.Combobox(frame, textvariable=proj_var, values=project_names, state="readonly")
+        if project_names: proj_dropdown.current(0)
+        proj_dropdown.pack(fill=tk.X, pady=(0, 15))
+        
+        # Role Selection
+        ttk.Label(frame, text="Select Role:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
+        roles = engine_projects.get_roles()
+        role_var = tk.StringVar()
+        role_dropdown = ttk.Combobox(frame, textvariable=role_var, values=roles, state="readonly")
+        if roles: role_dropdown.current(0)
+        role_dropdown.pack(fill=tk.X, pady=(0, 20))
+        
+        def on_spawn():
+            p_name = proj_var.get()
+            selected_proj = next((p for p in projects if p['name'] == p_name), None)
+            if not selected_proj: return
+            
+            role = role_var.get()
+            
+            title, pid = engine_projects.launch_worker(selected_proj, role)
+            
+            worker_info = {
+                "role": role,
+                "folder": selected_proj['local_path'],
+                "kanban": selected_proj['kanban_project_name'],
+                "start_time": time.time(),
+                "terminal": title,
+                "pid": pid
+            }
+            self.workers.append(worker_info)
+            self.refresh_worker_table()
+
+            if pid: self.root.after(1500, lambda: self.connect_by_pid(pid, title))
+            else: self.root.after(1500, lambda: self.connect_by_title(title))
+            
+            popup.destroy()
+
+        ttk.Button(frame, text="🚀 Launch Worker", command=on_spawn).pack(pady=10)
+
+    def on_project_select(self, event=None):
+        pass
 
     def periodic_git_refresh(self):
-        if self.active_project: self.on_project_select()
+        self.refresh_worker_table()
         ms = self.full_config.get("terminal", {}).get("git_refresh_ms", 3000)
         self.root.after(ms, self.periodic_git_refresh)
 
@@ -256,9 +285,25 @@ class OrchestratorUI:
 
     def open_settings_popup(self):
         popup = tk.Toplevel(self.root); popup.title("Global Settings")
-        self._center_popup(popup, 500, 600)
+        self._center_popup(popup, 500, 700)
         main = ttk.Frame(popup, padding=20); main.pack(fill=tk.BOTH, expand=True)
-        sections = ["kanban", "terminal"]
+        
+        descriptions = {
+            "ip": "The IP address of the Kanban server.",
+            "port": "The network port for the Kanban API connection.",
+            "last_project": "The project that will be selected by default on startup.",
+            "last_user": "The default user to monitor in the Kanban board.",
+            "poll_interval": "Seconds between Kanban API update checks.",
+            "sync_interval_ms": "Milliseconds between terminal screen captures.",
+            "auto_sync": "Enable background capturing of terminal text.",
+            "last_title": "Window title of the last connected agent terminal.",
+            "last_geometry": "Saved window size/position of the agent terminal.",
+            "git_refresh_ms": "Milliseconds between Git status and branch checks.",
+            "orch_geometry": "The Orchestrator's own window size and screen coordinates.",
+            "show_terminal": "Determines if the Live Terminal Mirror is visible on startup."
+        }
+
+        sections = ["kanban", "terminal", "ui"]
         entries = {}
         for section in sections:
             ttk.Label(main, text=f"[{section.upper()}]", font=("Segoe UI", 10, "bold")).pack(fill=tk.X, pady=(10, 5))
@@ -269,9 +314,20 @@ class OrchestratorUI:
                     if key == "poll_interval": label_text = "poll_interval (s)"
                     if key == "sync_interval_ms": label_text = "sync_interval (ms)"
                     
-                    ttk.Label(f, text=f"{label_text}:", width=25).pack(side=tk.LEFT)
-                    e = ttk.Entry(f); e.insert(0, str(val)); e.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                    entries[(section, key)] = e
+                    lbl = ttk.Label(f, text=f"{label_text}:", width=25)
+                    lbl.pack(side=tk.LEFT)
+                    if key in descriptions: ToolTip(lbl, descriptions[key])
+
+                    if isinstance(val, bool):
+                        w = ttk.Combobox(f, values=["True", "False"], state="readonly")
+                        w.set(str(val))
+                        w.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                    else:
+                        w = ttk.Entry(f)
+                        w.insert(0, str(val))
+                        w.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                    
+                    entries[(section, key)] = w
         
         def save():
             try:
@@ -291,11 +347,13 @@ class OrchestratorUI:
         
         ttk.Button(main, text="Save All", command=save).pack(pady=20)
 
-    def start_worker(self):
-        if not self.active_project: return
-        title, pid = engine_projects.launch_worker(self.active_project, self.role_var.get())
-        if pid: self.root.after(1500, lambda: self.connect_by_pid(pid, title))
-        else: self.root.after(1500, lambda: self.connect_by_title(title))
+    def refresh_worker_table(self):
+        for i in self.worker_tree.get_children(): self.worker_tree.delete(i)
+        for w in self.workers:
+            elapsed = int(time.time() - w['start_time'])
+            mins, secs = divmod(elapsed, 60)
+            time_str = f"{mins}m {secs}s"
+            self.worker_tree.insert("", tk.END, values=(w['role'], w['folder'], w['kanban'], time_str, w['terminal']))
 
     def connect_by_pid(self, target_pid, fallback_title):
         import win32process
@@ -326,6 +384,8 @@ class OrchestratorUI:
         else:
             self.cmd_frame.pack_forget(); self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
             self.cmd_frame.pack(fill=tk.X, side=tk.TOP, pady=(5, 0)); self.toggle_output_btn.config(text="▲ Hide Live"); self.output_visible.set(True)
+        self.full_config["ui"]["show_terminal"] = self.output_visible.get()
+        self._save_full_config()
 
     def toggle_auto_sync(self): 
         self.full_config["terminal"]["auto_sync"] = self.auto_sync_var.get(); self._save_full_config()
@@ -351,7 +411,9 @@ class OrchestratorUI:
         if cmd and self.terminal.send_command(cmd): self.cmd_entry.delete(0, tk.END); self.root.focus_force()
 
     def on_closing(self):
-        self.full_config["ui"]["orch_geometry"] = self.root.geometry(); self._save_full_config(); self.root.destroy()
+        self.full_config["ui"]["orch_geometry"] = self.root.geometry()
+        self.full_config["ui"]["show_terminal"] = self.output_visible.get()
+        self._save_full_config(); self.root.destroy()
 
 if __name__ == "__main__":
     root = tk.Tk(); app = OrchestratorUI(root); root.mainloop()
