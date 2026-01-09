@@ -44,7 +44,25 @@ class OrchestratorUI:
         
         # Load main config for UI state
         self.full_config = self._load_full_config()
-        self.root.geometry(self.full_config.get("ui", {}).get("orch_geometry", "1200x750"))
+        
+        # --- VISIBILITY CHECK ---
+        geom = self.full_config.get("ui", {}).get("orch_geometry", "1200x750+50+50")
+        try:
+            # Parse 1200x750+X+Y
+            parts = geom.replace('x', '+').split('+')
+            w, h = int(parts[0]), int(parts[1])
+            x, y = int(parts[2]), int(parts[3])
+            
+            screen_w = self.root.winfo_screenwidth()
+            screen_h = self.root.winfo_screenheight()
+            
+            # If the window is completely off-screen or in a negative space that might be hidden
+            if x < -w or x > screen_w or y < -h or y > screen_h:
+                geom = f"{w}x{h}+50+50"
+        except:
+            geom = "1200x750+50+50"
+
+        self.root.geometry(geom)
         self.root.configure(bg="#1e1e1e")
         
         self.terminal = engine_terminal.TerminalEngine()
@@ -57,6 +75,7 @@ class OrchestratorUI:
         
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        self.refresh_project_table()
         self.periodic_git_refresh()
 
     def _load_full_config(self):
@@ -93,10 +112,6 @@ class OrchestratorUI:
         btn_add.pack(side=tk.LEFT, padx=5)
         ToolTip(btn_add, "Register a new Git repository folder to the orchestrator.")
 
-        btn_manage = ttk.Button(proj_bar, text="Manage Projects", command=self.open_edit_projects_popup)
-        btn_manage.pack(side=tk.LEFT, padx=5)
-        ToolTip(btn_manage, "Open the project registry table to edit or remove projects.")
-
         btn_spawn_popup = ttk.Button(proj_bar, text="🚀 Spawn New Worker", command=self.open_spawn_worker_popup)
         btn_spawn_popup.pack(side=tk.LEFT, padx=15)
         ToolTip(btn_spawn_popup, "Open a dialog to configure and launch a new agent worker.")
@@ -106,11 +121,11 @@ class OrchestratorUI:
         ToolTip(btn_settings, "Configure global API connections and mirroring behavior.")
 
         # --- WORKER TRACKING TABLE ---
-        worker_table_frame = ttk.LabelFrame(self.main_container, text=" Active Workers ", padding="5")
-        worker_table_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.worker_frame = ttk.LabelFrame(self.main_container, text=" Active Workers ", padding="5")
+        self.worker_frame.pack(fill=tk.X, pady=(0, 10))
         
         cols = ("role", "folder", "kanban", "time", "terminal")
-        self.worker_tree = ttk.Treeview(worker_table_frame, columns=cols, show="headings", height=8)
+        self.worker_tree = ttk.Treeview(self.worker_frame, columns=cols, show="headings", height=1)
         self.worker_tree.heading("role", text="Role")
         self.worker_tree.heading("folder", text="Project Folder")
         self.worker_tree.heading("kanban", text="Project Kanban")
@@ -120,7 +135,25 @@ class OrchestratorUI:
         for c in cols: self.worker_tree.column(c, width=100)
         self.worker_tree.column("folder", width=250)
         self.worker_tree.column("kanban", width=150)
-        self.worker_tree.pack(fill=tk.BOTH, expand=True)
+        self.worker_tree.pack(fill=tk.X, expand=True)
+
+        # --- PROJECT REGISTRY TABLE ---
+        self.proj_reg_frame = ttk.LabelFrame(self.main_container, text=" Project Registry ", padding="5")
+        self.proj_reg_frame.pack(fill=tk.X, pady=(0, 10))
+
+        p_cols = ("name", "path", "kanban", "repo", "branch", "status")
+        self.project_tree = ttk.Treeview(self.proj_reg_frame, columns=p_cols, show="headings", height=1)
+        self.project_tree.tag_configure("link", foreground="#569cd6")
+        for c in p_cols: 
+            self.project_tree.heading(c, text=c.capitalize())
+            self.project_tree.column(c, width=120)
+        self.project_tree.pack(fill=tk.X, expand=True, side=tk.TOP)
+        
+        self.project_links = {}
+        self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
+
+        btn_del_proj = ttk.Button(self.proj_reg_frame, text="Remove Selected Project", command=self.delete_selected_project)
+        btn_del_proj.pack(side=tk.RIGHT, pady=5)
 
         # --- MIRROR HEADER ---
         mirror_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="5")
@@ -227,6 +260,7 @@ class OrchestratorUI:
 
     def periodic_git_refresh(self):
         self.refresh_worker_table()
+        self.refresh_project_table()
         ms = self.full_config.get("terminal", {}).get("git_refresh_ms", 3000)
         self.root.after(ms, self.periodic_git_refresh)
 
@@ -243,64 +277,62 @@ class OrchestratorUI:
         def on_save():
             if name_entry.get() and kanban_entry.get():
                 engine_projects.add_project(name_entry.get(), folder, kanban_entry.get())
-                self.project_dropdown['values'] = [prj['name'] for prj in engine_projects.load_projects()]
-                self.project_var.set(name_entry.get()); self.on_project_select(); popup.destroy()
+                self.refresh_project_table()
+                popup.destroy()
         ttk.Button(frame, text="Save Project", command=on_save).pack()
 
-    def open_edit_projects_popup(self):
-        popup = tk.Toplevel(self.root); popup.title("Manage Projects")
-        self._center_popup(popup, 1100, 500)
-        main_frame = ttk.Frame(popup, padding="15"); main_frame.pack(fill=tk.BOTH, expand=True)
-        cols = ("name", "path", "kanban", "repo", "branch", "commit")
-        tree = ttk.Treeview(main_frame, columns=cols, show="headings")
-        tree.tag_configure("link", foreground="#569cd6")
-        for c in cols: tree.heading(c, text=c.capitalize()); tree.column(c, width=150)
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        links = {}
-        def refresh():
-            for i in tree.get_children(): tree.delete(i)
-            for p in engine_projects.load_projects():
-                b, s, r, c, rem = engine_projects.get_git_info(p['local_path'])
-                kb_url = engine_projects.get_kanban_url(p['kanban_project_name'])
-                iid = tree.insert("", tk.END, values=(p['name'], p['local_path'], p['kanban_project_name'], os.path.basename(r) if r else "N/A", f"{b} ({s})", c), tags=("link",))
-                links[(iid, "path")] = p['local_path']
-                links[(iid, "kanban")] = kb_url
-                if rem: links[(iid, "repo")] = rem
-                if rem and c: links[(iid, "commit")] = f"{rem}/commit/{c}"
-        def on_db(e):
-            col = tree.identify_column(e.x); row = tree.identify_row(e.y)
-            if row and col:
-                c_name = cols[int(col[1:])-1]; l = links.get((row, c_name))
-                if l: webbrowser.open(l) if l.startswith("http") else os.startfile(l)
-        tree.bind("<Double-Button-1>", on_db); refresh()
-        def on_del():
-            sel = tree.selection()
-            if sel:
-                name = tree.item(sel[0])['values'][0]
-                if messagebox.askyesno("Delete", f"Remove {name}?"):
-                    engine_projects.delete_project(name)
-                    self.project_dropdown['values'] = [prj['name'] for prj in engine_projects.load_projects()]
-                    refresh()
-        ttk.Button(popup, text="Remove Selected", command=on_del).pack(side=tk.RIGHT, padx=15, pady=10)
+    def refresh_project_table(self):
+        self.project_links = {}
+        for i in self.project_tree.get_children(): self.project_tree.delete(i)
+        projects = engine_projects.load_projects()
+        for p in projects:
+            b, s, r, c, rem = engine_projects.get_git_info(p['local_path'])
+            kb_url = engine_projects.get_kanban_url(p['kanban_project_name'])
+            iid = self.project_tree.insert("", tk.END, values=(p['name'], p['local_path'], p['kanban_project_name'], os.path.basename(r) if r else "N/A", b, s), tags=("link",))
+            self.project_links[(iid, "path")] = p['local_path']
+            self.project_links[(iid, "kanban")] = kb_url
+            if rem: self.project_links[(iid, "repo")] = rem
+        
+        max_h = self.full_config.get("ui", {}).get("table_max_height", 6)
+        new_h = min(max_h, len(projects) + 1)
+        self.project_tree.config(height=max_h if len(projects) >= max_h else new_h)
+
+    def on_project_double_click(self, event):
+        col = self.project_tree.identify_column(event.x)
+        row = self.project_tree.identify_row(event.y)
+        if row and col:
+            cols = ("name", "path", "kanban", "repo", "branch", "status")
+            c_name = cols[int(col[1:])-1]
+            l = self.project_links.get((row, c_name))
+            if l: webbrowser.open(l) if l.startswith("http") else os.startfile(l)
+
+    def delete_selected_project(self):
+        sel = self.project_tree.selection()
+        if sel:
+            name = self.project_tree.item(sel[0])['values'][0]
+            if messagebox.askyesno("Delete", f"Remove {name}?"):
+                engine_projects.delete_project(name)
+                self.refresh_project_table()
 
     def open_settings_popup(self):
         popup = tk.Toplevel(self.root); popup.title("Global Settings")
-        self._center_popup(popup, 500, 700)
+        self._center_popup(popup, 500, 750)
         main = ttk.Frame(popup, padding=20); main.pack(fill=tk.BOTH, expand=True)
         
         descriptions = {
             "ip": "The IP address of the Kanban server.",
             "port": "The network port for the Kanban API connection.",
             "last_project": "The project that will be selected by default on startup.",
-            "last_user": "The default user to monitor in the Kanban board.",
+            "last_user": "The default user to monitor in the Kanban board.",      
             "poll_interval": "Seconds between Kanban API update checks.",
-            "sync_interval_ms": "Milliseconds between terminal screen captures.",
+            "sync_interval_ms": "Milliseconds between terminal screen captures.", 
             "auto_sync": "Enable background capturing of terminal text.",
-            "last_title": "Window title of the last connected agent terminal.",
-            "last_geometry": "Saved window size/position of the agent terminal.",
+            "last_title": "Window title of the last connected agent terminal.",   
+            "last_geometry": "Saved window size/position of the agent terminal.", 
             "git_refresh_ms": "Milliseconds between Git status and branch checks.",
             "orch_geometry": "The Orchestrator's own window size and screen coordinates.",
-            "show_terminal": "Determines if the Live Terminal Mirror is visible on startup."
+            "show_terminal": "Determines if the Live Terminal Mirror is visible on startup.",
+            "table_max_height": "Maximum rows to display in UI tables before scrolling."
         }
 
         sections = ["kanban", "terminal", "ui"]
@@ -311,12 +343,12 @@ class OrchestratorUI:
                 if isinstance(val, (str, int, float, bool)):
                     f = ttk.Frame(main); f.pack(fill=tk.X, pady=2)
                     label_text = key
-                    if key == "poll_interval": label_text = "poll_interval (s)"
+                    if key == "poll_interval": label_text = "poll_interval (s)"   
                     if key == "sync_interval_ms": label_text = "sync_interval (ms)"
-                    
+
                     lbl = ttk.Label(f, text=f"{label_text}:", width=25)
                     lbl.pack(side=tk.LEFT)
-                    if key in descriptions: ToolTip(lbl, descriptions[key])
+                    if key in descriptions: ToolTip(lbl, descriptions[key])       
 
                     if isinstance(val, bool):
                         w = ttk.Combobox(f, values=["True", "False"], state="readonly")
@@ -326,9 +358,9 @@ class OrchestratorUI:
                         w = ttk.Entry(f)
                         w.insert(0, str(val))
                         w.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                    
+
                     entries[(section, key)] = w
-        
+
         def save():
             try:
                 for (sec, key), entry in entries.items():
@@ -344,17 +376,20 @@ class OrchestratorUI:
                 popup.destroy()
             except Exception as e:
                 messagebox.showerror("Error", f"Invalid value: {e}")
-        
+
         ttk.Button(main, text="Save All", command=save).pack(pady=20)
 
     def refresh_worker_table(self):
-        for i in self.worker_tree.get_children(): self.worker_tree.delete(i)
+        for i in self.worker_tree.get_children(): self.worker_tree.delete(i)      
         for w in self.workers:
             elapsed = int(time.time() - w['start_time'])
             mins, secs = divmod(elapsed, 60)
             time_str = f"{mins}m {secs}s"
             self.worker_tree.insert("", tk.END, values=(w['role'], w['folder'], w['kanban'], time_str, w['terminal']))
-
+        
+        max_h = self.full_config.get("ui", {}).get("table_max_height", 6)
+        new_h = min(max_h, len(self.workers) + 1)
+        self.worker_tree.config(height=max_h if len(self.workers) >= max_h else new_h)
     def connect_by_pid(self, target_pid, fallback_title):
         import win32process
         found_h = None
