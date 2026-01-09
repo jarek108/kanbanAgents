@@ -117,14 +117,21 @@ class OrchestratorUI:
         btn_settings.pack(side=tk.RIGHT, padx=5)
         ToolTip(btn_settings, "Configure global API connections and mirroring behavior.")
 
-        # --- WORKER TRACKING TABLE ---
-        self.worker_frame = ttk.LabelFrame(self.main_container, text=" Active Workers ", padding="5")
-        self.worker_frame.pack(fill=tk.X, pady=(0, 10))
+        # --- WORKER TRACKING SECTION ---
+        self.worker_sect = ttk.Frame(self.main_container)
+        self.worker_sect.pack(fill=tk.X, pady=(0, 5))
         
-        worker_content = ttk.Frame(self.worker_frame)
-        worker_content.pack(fill=tk.X, expand=True)
+        worker_header = ttk.Frame(self.worker_sect)
+        worker_header.pack(fill=tk.X)
+        
+        self.worker_fold_btn = ttk.Button(worker_header, text="-", width=3, command=self.toggle_workers)
+        self.worker_fold_btn.pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(worker_header, text="Active Workers", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
 
-        worker_btns = ttk.Frame(worker_content)
+        self.worker_content = ttk.Frame(self.worker_sect, padding="5")
+        self.worker_content.pack(fill=tk.X)
+        
+        worker_btns = ttk.Frame(self.worker_content)
         worker_btns.pack(side=tk.RIGHT, padx=5)
         
         btn_create = ttk.Button(worker_btns, text="Create", command=self.open_spawn_worker_popup)
@@ -144,7 +151,7 @@ class OrchestratorUI:
         ToolTip(btn_disconnect, "Stop monitoring without killing the process.")
 
         cols = ("role", "folder", "kanban", "time", "terminal")
-        self.worker_tree = ttk.Treeview(worker_content, columns=cols, show="headings", height=1)
+        self.worker_tree = ttk.Treeview(self.worker_content, columns=cols, show="headings", height=1)
         self.worker_tree.heading("role", text="Role")
         self.worker_tree.heading("folder", text="Project Folder")
         self.worker_tree.heading("kanban", text="Project Kanban")
@@ -156,14 +163,21 @@ class OrchestratorUI:
         self.worker_tree.column("kanban", width=150)
         self.worker_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # --- PROJECT REGISTRY TABLE ---
-        self.proj_reg_frame = ttk.LabelFrame(self.main_container, text=" Project Registry ", padding="5")
-        self.proj_reg_frame.pack(fill=tk.X, pady=(0, 10))
+        # --- PROJECT REGISTRY SECTION ---
+        self.proj_sect = ttk.Frame(self.main_container)
+        self.proj_sect.pack(fill=tk.X, pady=(0, 5))
+        
+        proj_header_frame = ttk.Frame(self.proj_sect)
+        proj_header_frame.pack(fill=tk.X)
+        
+        self.proj_fold_btn = ttk.Button(proj_header_frame, text="-", width=3, command=self.toggle_projects)
+        self.proj_fold_btn.pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(proj_header_frame, text="Project Registry", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
 
-        proj_content = ttk.Frame(self.proj_reg_frame)
-        proj_content.pack(fill=tk.X, expand=True)
+        self.proj_content_frame = ttk.Frame(self.proj_sect, padding="5")
+        self.proj_content_frame.pack(fill=tk.X)
 
-        proj_btns = ttk.Frame(proj_content)
+        proj_btns = ttk.Frame(self.proj_content_frame)
         proj_btns.pack(side=tk.RIGHT, padx=5)
 
         btn_add_proj = ttk.Button(proj_btns, text="+ Add Project", command=self.open_add_project_popup)
@@ -175,7 +189,7 @@ class OrchestratorUI:
         ToolTip(btn_del_proj, "Delete the selected project from registry.")
 
         p_cols = ("name", "path", "kanban", "repo", "branch", "status")
-        self.project_tree = ttk.Treeview(proj_content, columns=p_cols, show="headings", height=1)
+        self.project_tree = ttk.Treeview(proj_content_frame, columns=p_cols, show="headings", height=1)
         self.project_tree.tag_configure("link", foreground="#569cd6")
         for c in p_cols: 
             self.project_tree.heading(c, text=c.capitalize())
@@ -185,38 +199,43 @@ class OrchestratorUI:
         self.project_links = {}
         self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
 
-        # --- COMMAND FIELD ---
-        self.cmd_frame = ttk.LabelFrame(self.main_container, text=" Send Command ", padding="10")
-        self.cmd_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(5, 0))
+        # --- COMMAND FIELD (Bottom Compact) ---
+        self.cmd_frame = ttk.Frame(self.main_container, padding="5")
+        self.cmd_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        ttk.Label(self.cmd_frame, text="Send Command:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(5, 5))
         self.cmd_entry = ttk.Entry(self.cmd_frame)
-        self.cmd_entry.pack(fill=tk.X, expand=True, padx=5)
+        self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.cmd_entry.bind("<Return>", self.send_command)
         ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
 
-        # --- MIRROR HEADER ---
-        mirror_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="5")
-        mirror_bar.pack(fill=tk.X, pady=(5, 5))
-        self.status_icon = tk.Label(mirror_bar, text="●", fg="red", bg="#2d2d2d", font=("Segoe UI", 11))
+        # --- MIRROR SECTION ---
+        self.mirror_sect = ttk.Frame(self.main_container)
+        self.mirror_sect.pack(fill=tk.BOTH, expand=True, pady=(5, 5))
+
+        self.mirror_header = ttk.Frame(self.mirror_sect, style="Header.TFrame", padding="5")
+        self.mirror_header.pack(fill=tk.X)
+        
+        self.mirror_fold_btn = ttk.Button(self.mirror_header, text="-", width=3, command=self.toggle_output_panel)
+        self.mirror_fold_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.status_icon = tk.Label(self.mirror_header, text="●", fg="red", bg="#2d2d2d", font=("Segoe UI", 11))
         self.status_icon.pack(side=tk.LEFT)
-        self.status_label = ttk.Label(mirror_bar, text="Disconnected", style="Header.TLabel")
+        self.status_label = ttk.Label(self.mirror_header, text="Disconnected", style="Header.TLabel")
         self.status_label.pack(side=tk.LEFT, padx=(2, 15))
         
         self.auto_sync_var = tk.BooleanVar(value=True)
-        chk_mirror = tk.Checkbutton(mirror_bar, text="Mirroring", variable=self.auto_sync_var, bg="#2d2d2d", fg="#d4d4d4", 
+        chk_mirror = tk.Checkbutton(self.mirror_header, text="Mirroring", variable=self.auto_sync_var, bg="#2d2d2d", fg="#d4d4d4", 
                        selectcolor="#1e1e1e", activebackground="#2d2d2d", font=("Segoe UI", 9), command=self.toggle_auto_sync)
         chk_mirror.pack(side=tk.LEFT, padx=5)
         ToolTip(chk_mirror, "Enable/Disable background UIA text capture for the terminal.")
 
-        self.output_visible = tk.BooleanVar(value=self.full_config.get("ui", {}).get("show_terminal", True))
-        self.toggle_output_btn = ttk.Button(mirror_bar, text="▲ Hide Live" if self.output_visible.get() else "▼ Show Live", 
-                                          command=self.toggle_output_panel)
-        self.toggle_output_btn.pack(side=tk.RIGHT, padx=5)
-        ToolTip(self.toggle_output_btn, "Toggle visibility of the terminal buffer mirror.")
-
         # --- TERMINAL MIRROR ---
-        self.display_frame = ttk.LabelFrame(self.main_container, text=" Terminal Mirror ", padding="5")
+        self.output_visible = tk.BooleanVar(value=self.full_config.get("ui", {}).get("show_terminal", True))
+        self.display_frame = ttk.Frame(self.mirror_sect, padding="5")
         if self.output_visible.get():
-            self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
+            self.display_frame.pack(fill=tk.BOTH, expand=True)
+        else:
+            self.mirror_fold_btn.config(text="+")
         
         self.terminal_display = scrolledtext.ScrolledText(
             self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
@@ -633,12 +652,31 @@ class OrchestratorUI:
                 self.is_syncing = True
                 threading.Thread(target=self._uia_sync_loop, daemon=True).start()
 
+    def toggle_workers(self):
+        if self.worker_content.winfo_viewable():
+            self.worker_content.pack_forget()
+            self.worker_fold_btn.config(text="+")
+        else:
+            self.worker_content.pack(fill=tk.X)
+            self.worker_fold_btn.config(text="-")
+
+    def toggle_projects(self):
+        if self.proj_content_frame.winfo_viewable():
+            self.proj_content_frame.pack_forget()
+            self.proj_fold_btn.config(text="+")
+        else:
+            self.proj_content_frame.pack(fill=tk.X)
+            self.proj_fold_btn.config(text="-")
+
     def toggle_output_panel(self):
         if self.output_visible.get():
-            self.display_frame.pack_forget(); self.toggle_output_btn.config(text="▼ Show Live"); self.output_visible.set(False)
+            self.display_frame.pack_forget()
+            self.mirror_fold_btn.config(text="+")
+            self.output_visible.set(False)
         else:
-            self.cmd_frame.pack_forget(); self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
-            self.cmd_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(5, 0)); self.toggle_output_btn.config(text="▲ Hide Live"); self.output_visible.set(True)
+            self.display_frame.pack(fill=tk.BOTH, expand=True)
+            self.mirror_fold_btn.config(text="-")
+            self.output_visible.set(True)
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
         self._save_full_config()
 
