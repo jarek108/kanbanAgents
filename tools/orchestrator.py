@@ -123,6 +123,42 @@ class OrchestratorUI:
         proj_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="10")
         proj_bar.pack(fill=tk.X, pady=(0, 10))
 
+        # --- PROJECT REGISTRY SECTION ---
+        self.proj_sect = ttk.Frame(self.main_container)
+        self.proj_sect.pack(fill=tk.X, pady=(0, 5))
+        
+        proj_header_frame = ttk.Frame(self.proj_sect)
+        proj_header_frame.pack(fill=tk.X)
+        
+        self.proj_fold_btn = ttk.Button(proj_header_frame, text="-", width=3, command=self.toggle_projects)
+        self.proj_fold_btn.pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(proj_header_frame, text="Project Registry", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+
+        self.proj_content_frame = ttk.Frame(self.proj_sect, padding="5")
+        self.proj_content_frame.pack(fill=tk.X)
+
+        proj_btns = ttk.Frame(self.proj_content_frame)
+        proj_btns.pack(side=tk.RIGHT, padx=5)
+
+        btn_add_proj = ttk.Button(proj_btns, text="+ Add Project", command=self.open_add_project_popup)
+        btn_add_proj.pack(fill=tk.X, pady=2)
+        ToolTip(btn_add_proj, "Register a new Git repository folder.")
+
+        btn_del_proj = ttk.Button(proj_btns, text="- Remove Project", command=self.delete_selected_project)
+        btn_del_proj.pack(fill=tk.X, pady=2)
+        ToolTip(btn_del_proj, "Delete the selected project from registry.")
+
+        p_cols = ("name", "path", "kanban", "repo", "branch", "status")
+        self.project_tree = ttk.Treeview(self.proj_content_frame, columns=p_cols, show="headings", height=1)
+        self.project_tree.tag_configure("link", foreground="#569cd6")
+        for c in p_cols: 
+            self.project_tree.heading(c, text=c.capitalize())
+            self.project_tree.column(c, width=120)
+        self.project_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.project_links = {}
+        self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
+
         # --- WORKER TRACKING SECTION ---
         self.worker_sect = ttk.Frame(self.main_container)
         self.worker_sect.pack(fill=tk.X, pady=(0, 5))
@@ -169,42 +205,6 @@ class OrchestratorUI:
         self.worker_tree.column("kanban", width=150)
         self.worker_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # --- PROJECT REGISTRY SECTION ---
-        self.proj_sect = ttk.Frame(self.main_container)
-        self.proj_sect.pack(fill=tk.X, pady=(0, 5))
-        
-        proj_header_frame = ttk.Frame(self.proj_sect)
-        proj_header_frame.pack(fill=tk.X)
-        
-        self.proj_fold_btn = ttk.Button(proj_header_frame, text="-", width=3, command=self.toggle_projects)
-        self.proj_fold_btn.pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Label(proj_header_frame, text="Project Registry", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
-
-        self.proj_content_frame = ttk.Frame(self.proj_sect, padding="5")
-        self.proj_content_frame.pack(fill=tk.X)
-
-        proj_btns = ttk.Frame(self.proj_content_frame)
-        proj_btns.pack(side=tk.RIGHT, padx=5)
-
-        btn_add_proj = ttk.Button(proj_btns, text="+ Add Project", command=self.open_add_project_popup)
-        btn_add_proj.pack(fill=tk.X, pady=2)
-        ToolTip(btn_add_proj, "Register a new Git repository folder.")
-
-        btn_del_proj = ttk.Button(proj_btns, text="- Remove Project", command=self.delete_selected_project)
-        btn_del_proj.pack(fill=tk.X, pady=2)
-        ToolTip(btn_del_proj, "Delete the selected project from registry.")
-
-        p_cols = ("name", "path", "kanban", "repo", "branch", "status")
-        self.project_tree = ttk.Treeview(self.proj_content_frame, columns=p_cols, show="headings", height=1)
-        self.project_tree.tag_configure("link", foreground="#569cd6")
-        for c in p_cols: 
-            self.project_tree.heading(c, text=c.capitalize())
-            self.project_tree.column(c, width=120)
-        self.project_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        self.project_links = {}
-        self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
-
         # --- MIRROR SECTION ---
         self.mirror_sect = ttk.Frame(self.main_container)
         self.mirror_sect.pack(fill=tk.BOTH, expand=True, pady=(5, 5))
@@ -233,12 +233,6 @@ class OrchestratorUI:
             self.display_frame.pack(fill=tk.BOTH, expand=True)
         else:
             self.mirror_fold_btn.config(text="+")
-        
-        self.terminal_display = scrolledtext.ScrolledText(
-            self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
-            padx=10, pady=10, borderwidth=0, highlightthickness=0
-        )
-        self.terminal_display.pack(fill=tk.BOTH, expand=True)
 
         # --- COMMAND FIELD (Compact, inside mirror) ---
         self.cmd_frame = ttk.Frame(self.display_frame, padding="5")
@@ -248,6 +242,12 @@ class OrchestratorUI:
         self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.cmd_entry.bind("<Return>", self.send_command)
         ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
+        
+        self.terminal_display = scrolledtext.ScrolledText(
+            self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
+            padx=10, pady=10, borderwidth=0, highlightthickness=0
+        )
+        self.terminal_display.pack(fill=tk.BOTH, expand=True)
 
     def _center_popup(self, popup, width, height):
         self.root.update_idletasks()
