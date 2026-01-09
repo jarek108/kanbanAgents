@@ -204,6 +204,7 @@ class OrchestratorUI:
         self.worker_tree.column("folder", width=250)
         self.worker_tree.column("kanban", width=150)
         self.worker_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.worker_tree.bind("<<TreeviewSelect>>", self.on_worker_select)
 
         # --- MIRROR SECTION ---
         self.mirror_sect = ttk.Frame(self.main_container)
@@ -463,7 +464,7 @@ class OrchestratorUI:
         kanban_entry = ttk.Entry(frame); kanban_entry.insert(0, name_entry.get()); kanban_entry.pack(fill=tk.X, pady=(0, 20))
         def on_save():
             if name_entry.get() and kanban_entry.get():
-                engine_projects.add_project(name_entry.get(), folder, kanban_entry.get())
+                engine_projects.add_project(name_entry.get(), folder, kanban_project_name=kanban_entry.get())
                 self.refresh_project_table()
                 popup.destroy()
         ttk.Button(frame, text="Save Project", command=on_save).pack()
@@ -654,6 +655,28 @@ class OrchestratorUI:
                 self.is_syncing = True
                 threading.Thread(target=self._uia_sync_loop, daemon=True).start()
 
+    def on_worker_select(self, event=None):
+        sel = self.worker_tree.selection()
+        if not sel: return
+        
+        item_idx = self.worker_tree.index(sel[0])
+        with self.status_lock:
+            if 0 <= item_idx < len(self.workers):
+                w = self.workers[item_idx]
+                # Find HWND and ID from window list if not present
+                if not w.get("hwnd"):
+                    for title, hwnd, rid in self.terminal.get_window_list():
+                        if w["terminal"] == title:
+                            w["hwnd"] = hwnd
+                            w["runtime_id"] = rid
+                            break
+                
+                if w.get("hwnd"):
+                    self.connect_to_hwnd(w["hwnd"], w["terminal"], w.get("runtime_id"))
+                    # Immediately show cached buffer
+                    if w.get("last_buffer"):
+                        self.update_display(w["last_buffer"])
+
     def toggle_workers(self):
         if self.worker_content.winfo_viewable():
             self.worker_content.pack_forget()
@@ -686,14 +709,43 @@ class OrchestratorUI:
         self.full_config["terminal"]["auto_sync"] = self.auto_sync_var.get(); self._save_full_config()
 
     def _uia_sync_loop(self):
-        """Persistent background thread for mirroring."""
+        """Persistent background thread for multi-worker mirroring."""
         import time
         while self.is_syncing:
-            if self.auto_sync_var.get() and self.terminal.connected_hwnd:
-                content = self.terminal.get_buffer_text()
-                if content:
-                    self.root.after(0, self.update_display, content)
-            
+            if not self.auto_sync_var.get():
+                time.sleep(1)
+                continue
+
+            with self.status_lock:
+                current_workers = list(self.workers)
+
+            for w in current_workers:
+                try:
+                    # 1. Resolve HWND/ID if missing
+                    if not w.get("hwnd"):
+                        for title, hwnd, rid in self.terminal.get_window_list():
+                            if w["terminal"] == title:
+                                w["hwnd"] = hwnd
+                                w["runtime_id"] = rid
+                                break
+                    
+                    if not w.get("hwnd"): continue
+
+                    # 2. Capture buffer
+                    content = self.terminal.get_buffer_text(
+                        hwnd=w.get("hwnd"), 
+                        title=w["terminal"], 
+                        runtime_id=w.get("runtime_id")
+                    )
+
+                    if content:
+                        w["last_buffer"] = content
+                        # 3. If this is the active terminal, update the UI
+                        if w.get("hwnd") == self.terminal.connected_hwnd:
+                            self.root.after(0, self.update_display, content)
+                except Exception as e:
+                    print(f"[Sync Loop Error] {e}")
+
             ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
             time.sleep(ms / 1000.0)
 
