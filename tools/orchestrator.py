@@ -272,7 +272,8 @@ class OrchestratorUI:
                 "kanban": selected_proj['kanban_project_name'],
                 "start_time": time.time(),
                 "terminal": title,
-                "pid": pid
+                "pid": pid,
+                "runtime_id": None
             }
             with self.status_lock:
                 self.workers.append(worker_info)
@@ -295,7 +296,7 @@ class OrchestratorUI:
         # 1. Terminal Window Selection
         ttk.Label(frame, text="1. Select Existing Window:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
         windows = self.terminal.get_window_list()
-        win_map = { f"{t} (HWND: {h})": (t, h) for t, h in windows }
+        win_map = { f"{t} (HWND: {h}, ID: {rid[:10]}...)": (t, h, rid) for t, h, rid in windows }
         win_titles = sorted(list(win_map.keys()))
         
         win_var = tk.StringVar()
@@ -323,7 +324,7 @@ class OrchestratorUI:
         def on_connect():
             if not win_var.get() or not proj_var.get(): return
             
-            title, hwnd = win_map[win_var.get()]
+            title, hwnd, rid = win_map[win_var.get()]
             p_name = proj_var.get()
             selected_proj = next((p for p in projects if p['name'] == p_name), None)
             role = role_var.get()
@@ -334,13 +335,14 @@ class OrchestratorUI:
                 "kanban": selected_proj['kanban_project_name'],
                 "start_time": time.time(),
                 "terminal": title,
+                "runtime_id": rid,
                 "pid": None # Manually connected
             }
             with self.status_lock:
                 self.workers.append(worker_info)
             
             self.refresh_worker_table()
-            self.connect_to_hwnd(hwnd, title)
+            self.connect_to_hwnd(hwnd, title, rid)
             popup.destroy()
 
         ttk.Button(frame, text="Add to Monitoring", command=on_connect).pack(pady=10)
@@ -350,17 +352,33 @@ class OrchestratorUI:
         if not sel: return
         
         item_idx = self.worker_tree.index(sel[0])
+        worker_to_kill = None
+        
         with self.status_lock:
             if 0 <= item_idx < len(self.workers):
-                worker = self.workers[item_idx]
-                if worker.get('pid'):
-                    if messagebox.askyesno("Kill Process", f"Are you sure you want to terminate {worker['terminal']} (PID: {worker['pid']})?"):
-                        engine_projects.kill_process(worker['pid'])
-                        self.workers.pop(item_idx)
+                worker_to_kill = self.workers[item_idx]
+
+        if not worker_to_kill: return
+
+        confirmed = False
+        if worker_to_kill.get('pid'):
+            if messagebox.askyesno("Kill Process", f"Are you sure you want to terminate {worker_to_kill['terminal']} (PID: {worker_to_kill['pid']})?"):
+                engine_projects.kill_process(worker_to_kill['pid'])
+                confirmed = True
+        else:
+            if messagebox.askyesno("Remove", "No PID found for this worker. Just remove from list?"):
+                confirmed = True
+
+        if confirmed:
+            with self.status_lock:
+                # Re-verify index in case list changed during prompt
+                if 0 <= item_idx < len(self.workers) and self.workers[item_idx] == worker_to_kill:
+                    self.workers.pop(item_idx)
                 else:
-                    if messagebox.askyesno("Remove", "No PID found for this worker. Just remove from list?"):
-                        self.workers.pop(item_idx)
-                self.refresh_worker_table()
+                    # Fallback: find by identity if index shifted
+                    if worker_to_kill in self.workers:
+                        self.workers.remove(worker_to_kill)
+            self.refresh_worker_table()
 
     def on_project_select(self, event=None):
         pass
@@ -589,15 +607,23 @@ class OrchestratorUI:
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 if pid == target_pid: found_h = hwnd
         win32gui.EnumWindows(enum_handler, None)
-        if found_h: self.connect_to_hwnd(found_h, fallback_title)
+        
+        if found_h:
+            # Try to find specific tab for this HWND to get RID
+            rid = None
+            for t, h, r in self.terminal.get_window_list():
+                if h == found_h and (fallback_title.lower() in t.lower()):
+                    rid = r
+                    break
+            self.connect_to_hwnd(found_h, fallback_title, rid)
         else: self.connect_by_title(fallback_title)
 
     def connect_by_title(self, title):
-        for t, h in self.terminal.get_window_list():
-            if title.lower() in t.lower(): self.connect_to_hwnd(h, t); return
+        for t, h, rid in self.terminal.get_window_list():
+            if title.lower() in t.lower(): self.connect_to_hwnd(h, t, rid); return
 
-    def connect_to_hwnd(self, hwnd, title):
-        if self.terminal.connect(hwnd, title):
+    def connect_to_hwnd(self, hwnd, title, rid=None):
+        if self.terminal.connect(hwnd, title, rid):
             self.status_icon.config(fg="green"); self.status_label.config(text=f"Mirroring: {title[:20]}...")
             if not self.is_syncing:
                 self.is_syncing = True
