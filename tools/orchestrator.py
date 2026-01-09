@@ -106,16 +106,22 @@ class OrchestratorUI:
         self.style.configure("TLabelframe.Label", background="#1e1e1e", foreground="#007acc")
 
     def setup_ui(self):
+        # --- WINDOW MENU BAR ---
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Settings", command=self.open_settings_popup)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.on_closing)
+
         self.main_container = ttk.Frame(self.root, padding="15")
         self.main_container.pack(fill=tk.BOTH, expand=True)
 
         # --- CONSOLIDATED PROJECT & STATUS BAR ---
         proj_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="10")
         proj_bar.pack(fill=tk.X, pady=(0, 10))
-
-        btn_settings = ttk.Button(proj_bar, text="Settings", command=self.open_settings_popup)
-        btn_settings.pack(side=tk.RIGHT, padx=5)
-        ToolTip(btn_settings, "Configure global API connections and mirroring behavior.")
 
         # --- WORKER TRACKING SECTION ---
         self.worker_sect = ttk.Frame(self.main_container)
@@ -199,15 +205,6 @@ class OrchestratorUI:
         self.project_links = {}
         self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
 
-        # --- COMMAND FIELD (Bottom Compact) ---
-        self.cmd_frame = ttk.Frame(self.main_container, padding="5")
-        self.cmd_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        ttk.Label(self.cmd_frame, text="Send Command:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(5, 5))
-        self.cmd_entry = ttk.Entry(self.cmd_frame)
-        self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        self.cmd_entry.bind("<Return>", self.send_command)
-        ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
-
         # --- MIRROR SECTION ---
         self.mirror_sect = ttk.Frame(self.main_container)
         self.mirror_sect.pack(fill=tk.BOTH, expand=True, pady=(5, 5))
@@ -229,7 +226,7 @@ class OrchestratorUI:
         chk_mirror.pack(side=tk.LEFT, padx=5)
         ToolTip(chk_mirror, "Enable/Disable background UIA text capture for the terminal.")
 
-        # --- TERMINAL MIRROR ---
+        # --- TERMINAL MIRROR & COMMAND ---
         self.output_visible = tk.BooleanVar(value=self.full_config.get("ui", {}).get("show_terminal", True))
         self.display_frame = ttk.Frame(self.mirror_sect, padding="5")
         if self.output_visible.get():
@@ -242,6 +239,15 @@ class OrchestratorUI:
             padx=10, pady=10, borderwidth=0, highlightthickness=0
         )
         self.terminal_display.pack(fill=tk.BOTH, expand=True)
+
+        # --- COMMAND FIELD (Compact, inside mirror) ---
+        self.cmd_frame = ttk.Frame(self.display_frame, padding="5")
+        self.cmd_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        ttk.Label(self.cmd_frame, text="Send Command:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(5, 5))
+        self.cmd_entry = ttk.Entry(self.cmd_frame)
+        self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.cmd_entry.bind("<Return>", self.send_command)
+        ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
 
     def _center_popup(self, popup, width, height):
         self.root.update_idletasks()
