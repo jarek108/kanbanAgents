@@ -7,6 +7,7 @@ import webbrowser
 import time
 import win32gui
 import win32process
+import win32api
 import engine_terminal
 import engine_kanban
 import engine_projects
@@ -53,11 +54,9 @@ class OrchestratorUI:
             w, h = int(parts[0]), int(parts[1])
             x, y = int(parts[2]), int(parts[3])
             
-            screen_w = self.root.winfo_screenwidth()
-            screen_h = self.root.winfo_screenheight()
-            
-            # If the window is completely off-screen or in a negative space that might be hidden
-            if x < -w or x > screen_w or y < -h or y > screen_h:
+            # Check if the top-left corner is on any monitor
+            # MonitorFromPoint with flag 0 returns None if the point is off-screen
+            if not win32api.MonitorFromPoint((x, y), 0):
                 geom = f"{w}x{h}+50+50"
         except:
             geom = "1200x750+50+50"

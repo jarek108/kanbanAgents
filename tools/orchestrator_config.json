@@ -15,7 +15,7 @@
     "terminal": {
         "sync_interval_ms": 1000,
         "auto_sync": true,
-        "last_title": "Agent_hexArena_coder",
+        "last_title": "Agent_test_e2e_manager",
         "last_geometry": "1000x400+329+-893",
         "git_refresh_ms": 3000
     },
@@ -32,7 +32,7 @@
         }
     ],
     "ui": {
-        "orch_geometry": "1100x950+329+-1121",
+        "orch_geometry": "934x850+420+-1037",
         "show_terminal": true
     }
 }
