@@ -189,7 +189,7 @@ class OrchestratorUI:
         ToolTip(btn_del_proj, "Delete the selected project from registry.")
 
         p_cols = ("name", "path", "kanban", "repo", "branch", "status")
-        self.project_tree = ttk.Treeview(proj_content_frame, columns=p_cols, show="headings", height=1)
+        self.project_tree = ttk.Treeview(self.proj_content_frame, columns=p_cols, show="headings", height=1)
         self.project_tree.tag_configure("link", foreground="#569cd6")
         for c in p_cols: 
             self.project_tree.heading(c, text=c.capitalize())
@@ -242,10 +242,6 @@ class OrchestratorUI:
             padx=10, pady=10, borderwidth=0, highlightthickness=0
         )
         self.terminal_display.pack(fill=tk.BOTH, expand=True)
-        self.cmd_entry = ttk.Entry(self.cmd_frame)
-        self.cmd_entry.pack(fill=tk.X, expand=True, padx=5)
-        self.cmd_entry.bind("<Return>", self.send_command)
-        ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
 
     def _center_popup(self, popup, width, height):
         self.root.update_idletasks()
