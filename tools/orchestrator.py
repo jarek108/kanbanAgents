@@ -124,19 +124,6 @@ class OrchestratorUI:
         worker_content = ttk.Frame(self.worker_frame)
         worker_content.pack(fill=tk.X, expand=True)
 
-        cols = ("role", "folder", "kanban", "time", "terminal")
-        self.worker_tree = ttk.Treeview(worker_content, columns=cols, show="headings", height=1)
-        self.worker_tree.heading("role", text="Role")
-        self.worker_tree.heading("folder", text="Project Folder")
-        self.worker_tree.heading("kanban", text="Project Kanban")
-        self.worker_tree.heading("time", text="Task Time")
-        self.worker_tree.heading("terminal", text="Terminal")
-        
-        for c in cols: self.worker_tree.column(c, width=100)
-        self.worker_tree.column("folder", width=250)
-        self.worker_tree.column("kanban", width=150)
-        self.worker_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
         worker_btns = ttk.Frame(worker_content)
         worker_btns.pack(side=tk.RIGHT, padx=5)
         
@@ -156,23 +143,25 @@ class OrchestratorUI:
         btn_disconnect.pack(fill=tk.X, pady=2)
         ToolTip(btn_disconnect, "Stop monitoring without killing the process.")
 
+        cols = ("role", "folder", "kanban", "time", "terminal")
+        self.worker_tree = ttk.Treeview(worker_content, columns=cols, show="headings", height=1)
+        self.worker_tree.heading("role", text="Role")
+        self.worker_tree.heading("folder", text="Project Folder")
+        self.worker_tree.heading("kanban", text="Project Kanban")
+        self.worker_tree.heading("time", text="Task Time")
+        self.worker_tree.heading("terminal", text="Terminal")
+        
+        for c in cols: self.worker_tree.column(c, width=100)
+        self.worker_tree.column("folder", width=250)
+        self.worker_tree.column("kanban", width=150)
+        self.worker_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
         # --- PROJECT REGISTRY TABLE ---
         self.proj_reg_frame = ttk.LabelFrame(self.main_container, text=" Project Registry ", padding="5")
         self.proj_reg_frame.pack(fill=tk.X, pady=(0, 10))
 
         proj_content = ttk.Frame(self.proj_reg_frame)
         proj_content.pack(fill=tk.X, expand=True)
-
-        p_cols = ("name", "path", "kanban", "repo", "branch", "status")
-        self.project_tree = ttk.Treeview(proj_content, columns=p_cols, show="headings", height=1)
-        self.project_tree.tag_configure("link", foreground="#569cd6")
-        for c in p_cols: 
-            self.project_tree.heading(c, text=c.capitalize())
-            self.project_tree.column(c, width=120)
-        self.project_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        self.project_links = {}
-        self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
 
         proj_btns = ttk.Frame(proj_content)
         proj_btns.pack(side=tk.RIGHT, padx=5)
@@ -184,6 +173,25 @@ class OrchestratorUI:
         btn_del_proj = ttk.Button(proj_btns, text="- Remove Project", command=self.delete_selected_project)
         btn_del_proj.pack(fill=tk.X, pady=2)
         ToolTip(btn_del_proj, "Delete the selected project from registry.")
+
+        p_cols = ("name", "path", "kanban", "repo", "branch", "status")
+        self.project_tree = ttk.Treeview(proj_content, columns=p_cols, show="headings", height=1)
+        self.project_tree.tag_configure("link", foreground="#569cd6")
+        for c in p_cols: 
+            self.project_tree.heading(c, text=c.capitalize())
+            self.project_tree.column(c, width=120)
+        self.project_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.project_links = {}
+        self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
+
+        # --- COMMAND FIELD ---
+        self.cmd_frame = ttk.LabelFrame(self.main_container, text=" Send Command ", padding="10")
+        self.cmd_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(5, 0))
+        self.cmd_entry = ttk.Entry(self.cmd_frame)
+        self.cmd_entry.pack(fill=tk.X, expand=True, padx=5)
+        self.cmd_entry.bind("<Return>", self.send_command)
+        ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
 
         # --- MIRROR HEADER ---
         mirror_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="5")
@@ -215,10 +223,6 @@ class OrchestratorUI:
             padx=10, pady=10, borderwidth=0, highlightthickness=0
         )
         self.terminal_display.pack(fill=tk.BOTH, expand=True)
-
-        # --- COMMAND FIELD ---
-        self.cmd_frame = ttk.LabelFrame(self.main_container, text=" Send Command ", padding="10")
-        self.cmd_frame.pack(fill=tk.X, side=tk.TOP, pady=(5, 0))
         self.cmd_entry = ttk.Entry(self.cmd_frame)
         self.cmd_entry.pack(fill=tk.X, expand=True, padx=5)
         self.cmd_entry.bind("<Return>", self.send_command)
@@ -634,7 +638,7 @@ class OrchestratorUI:
             self.display_frame.pack_forget(); self.toggle_output_btn.config(text="▼ Show Live"); self.output_visible.set(False)
         else:
             self.cmd_frame.pack_forget(); self.display_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, pady=5)
-            self.cmd_frame.pack(fill=tk.X, side=tk.TOP, pady=(5, 0)); self.toggle_output_btn.config(text="▲ Hide Live"); self.output_visible.set(True)
+            self.cmd_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(5, 0)); self.toggle_output_btn.config(text="▲ Hide Live"); self.output_visible.set(True)
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
         self._save_full_config()
 
