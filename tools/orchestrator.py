@@ -439,11 +439,16 @@ class OrchestratorUI:
         with self.status_lock:
             cache = dict(self.project_status_cache)
         
+        # Save selection
+        selected_name = None
+        sel = self.project_tree.selection()
+        if sel:
+            selected_name = self.project_tree.item(sel[0])['values'][0]
+
         self.project_links = {}
-        # Only clear/re-insert if length changed or we have data
-        # To avoid flicker, we can compare items, but for now simple refresh from cache
         for i in self.project_tree.get_children(): self.project_tree.delete(i)
         
+        to_select = None
         for name, info in cache.items():
             p = info['data']
             b, s, r, c, rem = info['git']
@@ -452,10 +457,16 @@ class OrchestratorUI:
                 os.path.basename(r) if r else "N/A", b, s
             ), tags=("link",))
             
+            if p['name'] == selected_name:
+                to_select = iid
+
             self.project_links[(iid, "path")] = p['local_path']
             self.project_links[(iid, "kanban")] = info['kanban_url']
             if rem: self.project_links[(iid, "repo")] = rem
         
+        if to_select:
+            self.project_tree.selection_set(to_select)
+
         max_h = self.full_config.get("ui", {}).get("table_max_height", 6)
         new_h = min(max_h, len(cache) + 1)
         self.project_tree.config(height=max_h if len(cache) >= max_h else new_h)
@@ -547,12 +558,24 @@ class OrchestratorUI:
             workers = list(self.workers)
             times = list(self.worker_status_cache)
             
+        # Save selection
+        selected_terminal = None
+        sel = self.worker_tree.selection()
+        if sel:
+            selected_terminal = self.worker_tree.item(sel[0])['values'][4] # terminal column
+
         for i in self.worker_tree.get_children(): self.worker_tree.delete(i)
         
+        to_select = None
         for idx, w in enumerate(workers):
             time_str = times[idx] if idx < len(times) else "Calculating..."
-            self.worker_tree.insert("", tk.END, values=(w['role'], w['folder'], w['kanban'], time_str, w['terminal']))
+            iid = self.worker_tree.insert("", tk.END, values=(w['role'], w['folder'], w['kanban'], time_str, w['terminal']))
+            if w['terminal'] == selected_terminal:
+                to_select = iid
         
+        if to_select:
+            self.worker_tree.selection_set(to_select)
+
         max_h = self.full_config.get("ui", {}).get("table_max_height", 6)
         new_h = min(max_h, len(workers) + 1)
         self.worker_tree.config(height=max_h if len(workers) >= max_h else new_h)
