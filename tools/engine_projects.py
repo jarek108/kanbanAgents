@@ -107,4 +107,16 @@ def launch_worker(project, role):
 
     return title, pid
 
+def kill_process(pid):
+    """Forcefully terminates a process by PID."""
+    if not pid: return False
+    try:
+        import subprocess
+        # Using taskkill on Windows for reliable tree killing
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+        return True
+    except Exception as e:
+        print(f"[Error] Failed to kill process {pid}: {e}")
+        return False
+
 

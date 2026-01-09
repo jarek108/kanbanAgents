@@ -140,13 +140,21 @@ class OrchestratorUI:
         worker_btns = ttk.Frame(worker_content)
         worker_btns.pack(side=tk.RIGHT, padx=5)
         
-        btn_add_worker = ttk.Button(worker_btns, text="+ Add Worker", command=self.open_spawn_worker_popup)
-        btn_add_worker.pack(fill=tk.X, pady=2)
-        ToolTip(btn_add_worker, "Launch a new agent worker for a project.")
+        btn_create = ttk.Button(worker_btns, text="Create", command=self.open_spawn_worker_popup)
+        btn_create.pack(fill=tk.X, pady=2)
+        ToolTip(btn_create, "Spawn a new agent terminal for a project.")
 
-        btn_rem_worker = ttk.Button(worker_btns, text="- Remove Worker", command=self.remove_selected_worker)
-        btn_rem_worker.pack(fill=tk.X, pady=2)
-        ToolTip(btn_rem_worker, "Close tracking for the selected worker.")
+        btn_kill = ttk.Button(worker_btns, text="Kill", command=self.kill_selected_worker)
+        btn_kill.pack(fill=tk.X, pady=2)
+        ToolTip(btn_kill, "Terminate the process and remove from monitoring.")
+
+        btn_connect = ttk.Button(worker_btns, text="Connect", command=self.open_connect_worker_popup)
+        btn_connect.pack(fill=tk.X, pady=2)
+        ToolTip(btn_connect, "Add an existing terminal window to the monitoring list.")
+
+        btn_disconnect = ttk.Button(worker_btns, text="Disconnect", command=self.remove_selected_worker)
+        btn_disconnect.pack(fill=tk.X, pady=2)
+        ToolTip(btn_disconnect, "Stop monitoring without killing the process.")
 
         # --- PROJECT REGISTRY TABLE ---
         self.proj_reg_frame = ttk.LabelFrame(self.main_container, text=" Project Registry ", padding="5")
@@ -226,7 +234,7 @@ class OrchestratorUI:
 
     def open_spawn_worker_popup(self):
         popup = tk.Toplevel(self.root)
-        popup.title("Add Worker")
+        popup.title("Create Worker")
         self._center_popup(popup, 500, 400)
         
         frame = ttk.Frame(popup, padding="20")
@@ -266,14 +274,93 @@ class OrchestratorUI:
                 "terminal": title,
                 "pid": pid
             }
-            self.workers.append(worker_info)
+            with self.status_lock:
+                self.workers.append(worker_info)
             self.refresh_worker_table()
 
             if pid: self.root.after(1500, lambda: self.connect_by_pid(pid, title))
             else: self.root.after(1500, lambda: self.connect_by_title(title))
             popup.destroy()
 
-        ttk.Button(frame, text="Launch Worker", command=on_spawn).pack(pady=10)
+        ttk.Button(frame, text="Create Worker", command=on_spawn).pack(pady=10)
+
+    def open_connect_worker_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.title("Connect Existing Terminal")
+        self._center_popup(popup, 600, 500)
+        
+        frame = ttk.Frame(popup, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # 1. Terminal Window Selection
+        ttk.Label(frame, text="1. Select Existing Window:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
+        windows = self.terminal.get_window_list()
+        win_map = { f"{t} (HWND: {h})": (t, h) for t, h in windows }
+        win_titles = sorted(list(win_map.keys()))
+        
+        win_var = tk.StringVar()
+        win_dropdown = ttk.Combobox(frame, textvariable=win_var, values=win_titles, state="readonly")
+        if win_titles: win_dropdown.current(0)
+        win_dropdown.pack(fill=tk.X, pady=(0, 15))
+
+        # 2. Project Selection
+        ttk.Label(frame, text="2. Associate with Project:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
+        projects = engine_projects.load_projects()
+        proj_names = [p['name'] for p in projects]
+        proj_var = tk.StringVar()
+        proj_dropdown = ttk.Combobox(frame, textvariable=proj_var, values=proj_names, state="readonly")
+        if proj_names: proj_dropdown.current(0)
+        proj_dropdown.pack(fill=tk.X, pady=(0, 15))
+
+        # 3. Role Selection
+        ttk.Label(frame, text="3. Associate with Role:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
+        roles = engine_projects.get_roles()
+        role_var = tk.StringVar()
+        role_dropdown = ttk.Combobox(frame, textvariable=role_var, values=roles, state="readonly")
+        if roles: role_dropdown.current(0)
+        role_dropdown.pack(fill=tk.X, pady=(0, 20))
+
+        def on_connect():
+            if not win_var.get() or not proj_var.get(): return
+            
+            title, hwnd = win_map[win_var.get()]
+            p_name = proj_var.get()
+            selected_proj = next((p for p in projects if p['name'] == p_name), None)
+            role = role_var.get()
+
+            worker_info = {
+                "role": role,
+                "folder": selected_proj['local_path'],
+                "kanban": selected_proj['kanban_project_name'],
+                "start_time": time.time(),
+                "terminal": title,
+                "pid": None # Manually connected
+            }
+            with self.status_lock:
+                self.workers.append(worker_info)
+            
+            self.refresh_worker_table()
+            self.connect_to_hwnd(hwnd, title)
+            popup.destroy()
+
+        ttk.Button(frame, text="Add to Monitoring", command=on_connect).pack(pady=10)
+
+    def kill_selected_worker(self):
+        sel = self.worker_tree.selection()
+        if not sel: return
+        
+        item_idx = self.worker_tree.index(sel[0])
+        with self.status_lock:
+            if 0 <= item_idx < len(self.workers):
+                worker = self.workers[item_idx]
+                if worker.get('pid'):
+                    if messagebox.askyesno("Kill Process", f"Are you sure you want to terminate {worker['terminal']} (PID: {worker['pid']})?"):
+                        engine_projects.kill_process(worker['pid'])
+                        self.workers.pop(item_idx)
+                else:
+                    if messagebox.askyesno("Remove", "No PID found for this worker. Just remove from list?"):
+                        self.workers.pop(item_idx)
+                self.refresh_worker_table()
 
     def on_project_select(self, event=None):
         pass
@@ -342,8 +429,10 @@ class OrchestratorUI:
         sel = self.worker_tree.selection()
         if sel:
             item_idx = self.worker_tree.index(sel[0])
-            if 0 <= item_idx < len(self.workers):
-                self.workers.pop(item_idx)
+            if messagebox.askyesno("Disconnect", "Stop monitoring this worker? (The process will keep running)"):
+                with self.status_lock:
+                    if 0 <= item_idx < len(self.workers):
+                        self.workers.pop(item_idx)
                 self.refresh_worker_table()
 
     def refresh_project_table(self):
