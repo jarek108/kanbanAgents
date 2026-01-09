@@ -52,11 +52,9 @@ class TerminalEngine:
                 win_id = ",".join(map(str, element.GetRuntimeId()))
                 if win_name: discovered.append((win_name, hwnd, win_id))
 
-                # Search for Tabs
-                for child in element.GetChildren():
-                    # Look for TabItems or similar
-                    ctype = child.ControlTypeName
-                    if ctype in ["TabItemControl", "ListItemControl"]:
+                # Use WalkControl to find all TabItems recursively
+                for child, depth in auto.WalkControl(element, maxDepth=10):
+                    if child.ControlTypeName in ["TabItemControl", "ListItemControl"]:
                         name = child.Name
                         if name:
                             rid = ",".join(map(str, child.GetRuntimeId()))
@@ -118,8 +116,8 @@ class TerminalEngine:
 
             if not target_element: return None
 
-            # Find text pattern
-            for child in target_element.GetDescendants():
+            # Find text pattern using WalkControl
+            for child, depth in auto.WalkControl(target_element, maxDepth=12):
                 if child.ControlTypeName in ["PaneControl", "DocumentControl", "EditControl"]:
                     try:
                         # Some terminals use TextPattern, others just have a Name or Value
