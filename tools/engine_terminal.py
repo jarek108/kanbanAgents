@@ -110,6 +110,23 @@ $results | Select-Object -Unique
         engine_events.emit("terminal_connected", {"title": title, "hwnd": hwnd, "runtime_id": runtime_id})
         return True
 
+    def disconnect(self):
+        title = self.connected_title
+        self.connected_hwnd = None
+        self.connected_title = None
+        self.connected_runtime_id = None
+        engine_events.emit("terminal_disconnected", {"title": title})
+
+    def send_command(self, cmd):
+        if not self.connected_hwnd or not win32gui.IsWindow(self.connected_hwnd): return False
+        try:
+            if win32gui.IsIconic(self.connected_hwnd): win32gui.ShowWindow(self.connected_hwnd, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(self.connected_hwnd)
+            time.sleep(0.05)
+            pyautogui.write(cmd + "\n", interval=0.01)
+            return True
+        except: return False
+
     def get_buffer_text(self):
         """Captures terminal text buffer using UIA. Targeted by HWND + Title + ID."""
         if not self.connected_hwnd or not win32gui.IsWindow(self.connected_hwnd): return None
