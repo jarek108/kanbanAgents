@@ -32,7 +32,7 @@
         }
     ],
     "ui": {
-        "orch_geometry": "934x850+420+-1037",
+        "orch_geometry": "1446x850+84+-990",
         "show_terminal": true
     }
 }

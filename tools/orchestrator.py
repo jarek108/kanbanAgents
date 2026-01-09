@@ -55,7 +55,6 @@ class OrchestratorUI:
             x, y = int(parts[2]), int(parts[3])
             
             # Check if the top-left corner is on any monitor
-            # MonitorFromPoint with flag 0 returns None if the point is off-screen
             if not win32api.MonitorFromPoint((x, y), 0):
                 geom = f"{w}x{h}+50+50"
         except:
@@ -67,7 +66,14 @@ class OrchestratorUI:
         self.terminal = engine_terminal.TerminalEngine()
         self.is_syncing = False
         self.active_project = None
-        self.workers = [] # Track active worker info
+        self.workers = [] 
+        
+        # --- BACKGROUND STATUS TRACKING ---
+        self.status_lock = threading.Lock()
+        self.project_status_cache = {} # name -> git_info_dict
+        self.worker_status_cache = [] # List of elapsed time strings
+        self.is_running = True
+        threading.Thread(target=self._background_status_loop, daemon=True).start()
         
         self.setup_styles()
         self.setup_ui()
@@ -107,14 +113,6 @@ class OrchestratorUI:
         proj_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="10")
         proj_bar.pack(fill=tk.X, pady=(0, 10))
 
-        btn_add = ttk.Button(proj_bar, text="+ Add Project", command=self.open_add_project_popup)
-        btn_add.pack(side=tk.LEFT, padx=5)
-        ToolTip(btn_add, "Register a new Git repository folder to the orchestrator.")
-
-        btn_spawn_popup = ttk.Button(proj_bar, text="🚀 Spawn New Worker", command=self.open_spawn_worker_popup)
-        btn_spawn_popup.pack(side=tk.LEFT, padx=15)
-        ToolTip(btn_spawn_popup, "Open a dialog to configure and launch a new agent worker.")
-
         btn_settings = ttk.Button(proj_bar, text="Settings", command=self.open_settings_popup)
         btn_settings.pack(side=tk.RIGHT, padx=5)
         ToolTip(btn_settings, "Configure global API connections and mirroring behavior.")
@@ -123,8 +121,11 @@ class OrchestratorUI:
         self.worker_frame = ttk.LabelFrame(self.main_container, text=" Active Workers ", padding="5")
         self.worker_frame.pack(fill=tk.X, pady=(0, 10))
         
+        worker_content = ttk.Frame(self.worker_frame)
+        worker_content.pack(fill=tk.X, expand=True)
+
         cols = ("role", "folder", "kanban", "time", "terminal")
-        self.worker_tree = ttk.Treeview(self.worker_frame, columns=cols, show="headings", height=1)
+        self.worker_tree = ttk.Treeview(worker_content, columns=cols, show="headings", height=1)
         self.worker_tree.heading("role", text="Role")
         self.worker_tree.heading("folder", text="Project Folder")
         self.worker_tree.heading("kanban", text="Project Kanban")
@@ -134,25 +135,47 @@ class OrchestratorUI:
         for c in cols: self.worker_tree.column(c, width=100)
         self.worker_tree.column("folder", width=250)
         self.worker_tree.column("kanban", width=150)
-        self.worker_tree.pack(fill=tk.X, expand=True)
+        self.worker_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        worker_btns = ttk.Frame(worker_content)
+        worker_btns.pack(side=tk.RIGHT, padx=5)
+        
+        btn_add_worker = ttk.Button(worker_btns, text="+ Add Worker", command=self.open_spawn_worker_popup)
+        btn_add_worker.pack(fill=tk.X, pady=2)
+        ToolTip(btn_add_worker, "Launch a new agent worker for a project.")
+
+        btn_rem_worker = ttk.Button(worker_btns, text="- Remove Worker", command=self.remove_selected_worker)
+        btn_rem_worker.pack(fill=tk.X, pady=2)
+        ToolTip(btn_rem_worker, "Close tracking for the selected worker.")
 
         # --- PROJECT REGISTRY TABLE ---
         self.proj_reg_frame = ttk.LabelFrame(self.main_container, text=" Project Registry ", padding="5")
         self.proj_reg_frame.pack(fill=tk.X, pady=(0, 10))
 
+        proj_content = ttk.Frame(self.proj_reg_frame)
+        proj_content.pack(fill=tk.X, expand=True)
+
         p_cols = ("name", "path", "kanban", "repo", "branch", "status")
-        self.project_tree = ttk.Treeview(self.proj_reg_frame, columns=p_cols, show="headings", height=1)
+        self.project_tree = ttk.Treeview(proj_content, columns=p_cols, show="headings", height=1)
         self.project_tree.tag_configure("link", foreground="#569cd6")
         for c in p_cols: 
             self.project_tree.heading(c, text=c.capitalize())
             self.project_tree.column(c, width=120)
-        self.project_tree.pack(fill=tk.X, expand=True, side=tk.TOP)
+        self.project_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         self.project_links = {}
         self.project_tree.bind("<Double-Button-1>", self.on_project_double_click)
 
-        btn_del_proj = ttk.Button(self.proj_reg_frame, text="Remove Selected Project", command=self.delete_selected_project)
-        btn_del_proj.pack(side=tk.RIGHT, pady=5)
+        proj_btns = ttk.Frame(proj_content)
+        proj_btns.pack(side=tk.RIGHT, padx=5)
+
+        btn_add_proj = ttk.Button(proj_btns, text="+ Add Project", command=self.open_add_project_popup)
+        btn_add_proj.pack(fill=tk.X, pady=2)
+        ToolTip(btn_add_proj, "Register a new Git repository folder.")
+
+        btn_del_proj = ttk.Button(proj_btns, text="- Remove Project", command=self.delete_selected_project)
+        btn_del_proj.pack(fill=tk.X, pady=2)
+        ToolTip(btn_del_proj, "Delete the selected project from registry.")
 
         # --- MIRROR HEADER ---
         mirror_bar = ttk.Frame(self.main_container, style="Header.TFrame", padding="5")
@@ -203,7 +226,7 @@ class OrchestratorUI:
 
     def open_spawn_worker_popup(self):
         popup = tk.Toplevel(self.root)
-        popup.title("Spawn New Worker")
+        popup.title("Add Worker")
         self._center_popup(popup, 500, 400)
         
         frame = ttk.Frame(popup, padding="20")
@@ -233,7 +256,6 @@ class OrchestratorUI:
             if not selected_proj: return
             
             role = role_var.get()
-            
             title, pid = engine_projects.launch_worker(selected_proj, role)
             
             worker_info = {
@@ -249,19 +271,55 @@ class OrchestratorUI:
 
             if pid: self.root.after(1500, lambda: self.connect_by_pid(pid, title))
             else: self.root.after(1500, lambda: self.connect_by_title(title))
-            
             popup.destroy()
 
-        ttk.Button(frame, text="🚀 Launch Worker", command=on_spawn).pack(pady=10)
+        ttk.Button(frame, text="Launch Worker", command=on_spawn).pack(pady=10)
 
     def on_project_select(self, event=None):
         pass
 
+    def _background_status_loop(self):
+        """Heavy lifting (Git/API) happens here in a separate thread."""
+        while self.is_running:
+            try:
+                # 1. Update Project Statuses
+                projects = engine_projects.load_projects()
+                new_project_cache = {}
+                for p in projects:
+                    git_info = engine_projects.get_git_info(p['local_path'])
+                    kb_url = engine_projects.get_kanban_url(p['kanban_project_name'])
+                    new_project_cache[p['name']] = {
+                        "git": git_info, # (branch, status, root, commit, remote)
+                        "kanban_url": kb_url,
+                        "data": p
+                    }
+
+                # 2. Update Worker Times
+                new_worker_times = []
+                with self.status_lock:
+                    current_workers = list(self.workers)
+                
+                for w in current_workers:
+                    elapsed = int(time.time() - w['start_time'])
+                    mins, secs = divmod(elapsed, 60)
+                    new_worker_times.append(f"{mins}m {secs}s")
+
+                # 3. Commit to cache
+                with self.status_lock:
+                    self.project_status_cache = new_project_cache
+                    self.worker_status_cache = new_worker_times
+            except Exception as e:
+                print(f"[Status Thread Error] {e}")
+            
+            # Sleep based on config
+            ms = self.full_config.get("terminal", {}).get("git_refresh_ms", 3000)
+            time.sleep(ms / 1000.0)
+
     def periodic_git_refresh(self):
+        """UI Tick: Just renders the latest cached data."""
         self.refresh_worker_table()
         self.refresh_project_table()
-        ms = self.full_config.get("terminal", {}).get("git_refresh_ms", 3000)
-        self.root.after(ms, self.periodic_git_refresh)
+        self.root.after(500, self.periodic_git_refresh) # Faster UI response, but heavy work is throttled by thread
 
     def open_add_project_popup(self):
         folder = filedialog.askdirectory(initialdir=os.getcwd(), title="Select Project Folder")
@@ -280,21 +338,38 @@ class OrchestratorUI:
                 popup.destroy()
         ttk.Button(frame, text="Save Project", command=on_save).pack()
 
+    def remove_selected_worker(self):
+        sel = self.worker_tree.selection()
+        if sel:
+            item_idx = self.worker_tree.index(sel[0])
+            if 0 <= item_idx < len(self.workers):
+                self.workers.pop(item_idx)
+                self.refresh_worker_table()
+
     def refresh_project_table(self):
+        with self.status_lock:
+            cache = dict(self.project_status_cache)
+        
         self.project_links = {}
+        # Only clear/re-insert if length changed or we have data
+        # To avoid flicker, we can compare items, but for now simple refresh from cache
         for i in self.project_tree.get_children(): self.project_tree.delete(i)
-        projects = engine_projects.load_projects()
-        for p in projects:
-            b, s, r, c, rem = engine_projects.get_git_info(p['local_path'])
-            kb_url = engine_projects.get_kanban_url(p['kanban_project_name'])
-            iid = self.project_tree.insert("", tk.END, values=(p['name'], p['local_path'], p['kanban_project_name'], os.path.basename(r) if r else "N/A", b, s), tags=("link",))
+        
+        for name, info in cache.items():
+            p = info['data']
+            b, s, r, c, rem = info['git']
+            iid = self.project_tree.insert("", tk.END, values=(
+                p['name'], p['local_path'], p['kanban_project_name'], 
+                os.path.basename(r) if r else "N/A", b, s
+            ), tags=("link",))
+            
             self.project_links[(iid, "path")] = p['local_path']
-            self.project_links[(iid, "kanban")] = kb_url
+            self.project_links[(iid, "kanban")] = info['kanban_url']
             if rem: self.project_links[(iid, "repo")] = rem
         
         max_h = self.full_config.get("ui", {}).get("table_max_height", 6)
-        new_h = min(max_h, len(projects) + 1)
-        self.project_tree.config(height=max_h if len(projects) >= max_h else new_h)
+        new_h = min(max_h, len(cache) + 1)
+        self.project_tree.config(height=max_h if len(cache) >= max_h else new_h)
 
     def on_project_double_click(self, event):
         col = self.project_tree.identify_column(event.x)
@@ -322,12 +397,12 @@ class OrchestratorUI:
             "ip": "The IP address of the Kanban server.",
             "port": "The network port for the Kanban API connection.",
             "last_project": "The project that will be selected by default on startup.",
-            "last_user": "The default user to monitor in the Kanban board.",      
+            "last_user": "The default user to monitor in the Kanban board.",
             "poll_interval": "Seconds between Kanban API update checks.",
-            "sync_interval_ms": "Milliseconds between terminal screen captures.", 
+            "sync_interval_ms": "Milliseconds between terminal screen captures.",
             "auto_sync": "Enable background capturing of terminal text.",
-            "last_title": "Window title of the last connected agent terminal.",   
-            "last_geometry": "Saved window size/position of the agent terminal.", 
+            "last_title": "Window title of the last connected agent terminal.",
+            "last_geometry": "Saved window size/position of the agent terminal.",
             "git_refresh_ms": "Milliseconds between Git status and branch checks.",
             "orch_geometry": "The Orchestrator's own window size and screen coordinates.",
             "show_terminal": "Determines if the Live Terminal Mirror is visible on startup.",
@@ -342,12 +417,12 @@ class OrchestratorUI:
                 if isinstance(val, (str, int, float, bool)):
                     f = ttk.Frame(main); f.pack(fill=tk.X, pady=2)
                     label_text = key
-                    if key == "poll_interval": label_text = "poll_interval (s)"   
+                    if key == "poll_interval": label_text = "poll_interval (s)"
                     if key == "sync_interval_ms": label_text = "sync_interval (ms)"
-
+                    
                     lbl = ttk.Label(f, text=f"{label_text}:", width=25)
                     lbl.pack(side=tk.LEFT)
-                    if key in descriptions: ToolTip(lbl, descriptions[key])       
+                    if key in descriptions: ToolTip(lbl, descriptions[key])
 
                     if isinstance(val, bool):
                         w = ttk.Combobox(f, values=["True", "False"], state="readonly")
@@ -357,9 +432,9 @@ class OrchestratorUI:
                         w = ttk.Entry(f)
                         w.insert(0, str(val))
                         w.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
+                    
                     entries[(section, key)] = w
-
+        
         def save():
             try:
                 for (sec, key), entry in entries.items():
@@ -375,20 +450,24 @@ class OrchestratorUI:
                 popup.destroy()
             except Exception as e:
                 messagebox.showerror("Error", f"Invalid value: {e}")
-
+        
         ttk.Button(main, text="Save All", command=save).pack(pady=20)
 
     def refresh_worker_table(self):
-        for i in self.worker_tree.get_children(): self.worker_tree.delete(i)      
-        for w in self.workers:
-            elapsed = int(time.time() - w['start_time'])
-            mins, secs = divmod(elapsed, 60)
-            time_str = f"{mins}m {secs}s"
+        with self.status_lock:
+            workers = list(self.workers)
+            times = list(self.worker_status_cache)
+            
+        for i in self.worker_tree.get_children(): self.worker_tree.delete(i)
+        
+        for idx, w in enumerate(workers):
+            time_str = times[idx] if idx < len(times) else "Calculating..."
             self.worker_tree.insert("", tk.END, values=(w['role'], w['folder'], w['kanban'], time_str, w['terminal']))
         
         max_h = self.full_config.get("ui", {}).get("table_max_height", 6)
-        new_h = min(max_h, len(self.workers) + 1)
-        self.worker_tree.config(height=max_h if len(self.workers) >= max_h else new_h)
+        new_h = min(max_h, len(workers) + 1)
+        self.worker_tree.config(height=max_h if len(workers) >= max_h else new_h)
+
     def connect_by_pid(self, target_pid, fallback_title):
         import win32process
         found_h = None
