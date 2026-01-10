@@ -83,14 +83,22 @@ class OrchestratorUI:
         self.refresh_project_table()
         self.periodic_git_refresh()
 
-    def _load_full_config(self):
+    def _get_config_path(self):
         cfg_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
+        template_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.template.json")
+        if not os.path.exists(cfg_path) and os.path.exists(template_path):
+            import shutil
+            shutil.copy(template_path, cfg_path)
+        return cfg_path
+
+    def _load_full_config(self):
+        cfg_path = self._get_config_path()
         if os.path.exists(cfg_path):
             with open(cfg_path, 'r') as f: return json.load(f)
         return {}
 
     def _save_full_config(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
+        cfg_path = self._get_config_path()
         with open(cfg_path, 'w') as f: json.dump(self.full_config, f, indent=4)
 
     def setup_styles(self):

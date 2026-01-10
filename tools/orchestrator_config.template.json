@@ -15,9 +15,10 @@
     "terminal": {
         "sync_interval_ms": 1000,
         "auto_sync": true,
-        "last_title": "Agent_hexArena_coder",
+        "last_title": "My2",
         "last_geometry": "1000x400+329+-893",
-        "git_refresh_ms": 3000
+        "git_refresh_ms": 3000,
+        "last_id": "42,67024,4,68"
     },
     "projects": [
         {
@@ -32,7 +33,7 @@
         }
     ],
     "ui": {
-        "orch_geometry": "1446x850+84+-990",
+        "orch_geometry": "1587x910+95+-1063",
         "show_terminal": true
     }
 }
