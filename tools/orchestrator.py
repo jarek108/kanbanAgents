@@ -106,7 +106,7 @@ class OrchestratorUI:
         self.style.theme_use('clam')
         self.style.configure("TFrame", background="#1e1e1e")
         self.style.configure("TLabel", background="#1e1e1e", foreground="#d4d4d4", font=("Segoe UI", 9))
-        self.style.configure("TButton", padding=3, font=("Segoe UI", 9))
+        self.style.configure("TButton", padding=(5, 1), font=("Segoe UI", 9), borderwidth=1, relief="flat")
         self.style.configure("Header.TFrame", background="#2d2d2d")
         self.style.configure("Header.TLabel", background="#2d2d2d", font=("Segoe UI", 9, "bold"))
         self.style.configure("Info.TLabel", background="#2d2d2d", foreground="#569cd6", font=("Segoe UI", 9, "italic"))
