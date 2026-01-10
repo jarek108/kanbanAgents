@@ -98,6 +98,28 @@ class TerminalEngine:
             return True
         except: return False
 
+    def get_process_cwd(self, hwnd):
+        """Attempts to find the current working directory of the process owning the HWND."""
+        import psutil
+        import win32process
+        try:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            process = psutil.Process(pid)
+            # Shells like CMD/PowerShell usually keep the CWD. 
+            # If it's a wrapper (like WindowsTerminal), we might need to look at children.
+            cwd = process.cwd()
+            
+            # If it's Windows Terminal or similar, probe children
+            if process.name().lower() in ["windowsterminal.exe", "openconsole.exe"]:
+                for child in process.children(recursive=True):
+                    try:
+                        if child.name().lower() in ["pwsh.exe", "powershell.exe", "cmd.exe", "bash.exe"]:
+                            return child.cwd()
+                    except: pass
+            return cwd
+        except:
+            return None
+
     def get_buffer_text(self, hwnd=None, title=None, runtime_id=None):
         """Native capture using uiautomation."""
         target_hwnd = hwnd or self.connected_hwnd

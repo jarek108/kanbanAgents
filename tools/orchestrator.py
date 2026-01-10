@@ -341,19 +341,42 @@ class OrchestratorUI:
         # 2. Project Selection
         ttk.Label(frame, text="2. Associate with Project:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
         projects = engine_projects.load_projects()
-        proj_names = [p['name'] for p in projects]
+        
         proj_var = tk.StringVar()
-        proj_dropdown = ttk.Combobox(frame, textvariable=proj_var, values=proj_names, state="readonly")
-        if proj_names: proj_dropdown.current(0)
+        proj_dropdown = ttk.Combobox(frame, textvariable=proj_var, state="readonly")
         proj_dropdown.pack(fill=tk.X, pady=(0, 15))
 
         # 3. Role Selection
         ttk.Label(frame, text="3. Associate with Role:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
-        roles = engine_projects.get_roles()
-        role_var = tk.StringVar()
+        roles = ["?"] + engine_projects.get_roles()
+        role_var = tk.StringVar(value="?")
         role_dropdown = ttk.Combobox(frame, textvariable=role_var, values=roles, state="readonly")
-        if roles: role_dropdown.current(0)
         role_dropdown.pack(fill=tk.X, pady=(0, 20))
+
+        def update_project_list(*args):
+            if not win_var.get(): return
+            _, hwnd, _ = win_map[win_var.get()]
+            cwd = self.terminal.get_process_cwd(hwnd)
+            
+            filtered_names = ["None"]
+            suggested_idx = 0
+            
+            if cwd:
+                # Find projects that are subpaths or roots of this CWD
+                norm_cwd = os.path.normpath(cwd).lower()
+                for p in projects:
+                    p_path = os.path.normpath(p['local_path']).lower()
+                    if norm_cwd.startswith(p_path) or p_path.startswith(norm_cwd):
+                        filtered_names.append(p['name'])
+                        suggested_idx = len(filtered_names) - 1
+            else:
+                filtered_names.extend([p['name'] for p in projects])
+
+            proj_dropdown['values'] = filtered_names
+            proj_dropdown.current(suggested_idx)
+
+        win_var.trace_add("write", update_project_list)
+        update_project_list() # Initial trigger
 
         def on_connect():
             if not win_var.get() or not proj_var.get(): return
@@ -365,11 +388,12 @@ class OrchestratorUI:
 
             worker_info = {
                 "role": role,
-                "folder": selected_proj['local_path'],
-                "kanban": selected_proj['kanban_project_name'],
+                "folder": selected_proj['local_path'] if selected_proj else "N/A",
+                "kanban": selected_proj['kanban_project_name'] if selected_proj else "None",
                 "start_time": time.time(),
                 "terminal": title,
                 "runtime_id": rid,
+                "hwnd": hwnd,
                 "pid": None # Manually connected
             }
             with self.status_lock:
