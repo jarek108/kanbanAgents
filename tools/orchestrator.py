@@ -434,4 +434,6 @@ class OrchestratorUI:
         utils_ui.save_full_config(self.full_config); self.root.destroy()
 
 if __name__ == "__main__":
-    root = tk.Tk(); app = OrchestratorUI(root); root.mainloop()
+    import uiautomation as auto
+    with auto.UIAutomationInitializerInThread():
+        root = tk.Tk(); app = OrchestratorUI(root); root.mainloop()

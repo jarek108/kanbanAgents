@@ -58,9 +58,11 @@ class WorkerManager:
 
     def _uia_sync_loop(self):
         """Persistent background thread for multi-worker mirroring with node caching."""
-        while self.is_syncing:
-            with self.status_lock:
-                current_workers = list(self.workers)
+        import uiautomation as auto
+        with auto.UIAutomationInitializerInThread():
+            while self.is_syncing:
+                with self.status_lock:
+                    current_workers = list(self.workers)
 
             needs_refresh = False
             new_worker_times = []
