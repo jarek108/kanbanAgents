@@ -3,6 +3,7 @@ import json
 import subprocess
 import engine_events
 import tempfile
+import utils_ui
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
 AGENT_DEFS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agent_definitions")
@@ -12,14 +13,15 @@ def _git_cmd(path, args):
     return subprocess.check_output(["git", "-C", path] + args, stderr=subprocess.STDOUT, text=True).strip()
 
 def load_projects():
-    if not os.path.exists(CONFIG_FILE): return []
-    with open(CONFIG_FILE, 'r') as f: return json.load(f).get("projects", [])
+    data = utils_ui.load_full_config()
+    return data.get("projects", [])
 
 def save_projects(projects):
-    if not os.path.exists(CONFIG_FILE): return
-    with open(CONFIG_FILE, 'r') as f: full_cfg = json.load(f)
-    full_cfg["projects"] = projects
-    with open(CONFIG_FILE, 'w') as f: json.dump(full_cfg, f, indent=4)
+    data = utils_ui.load_full_config()
+    data["projects"] = projects
+    utils_ui.save_full_config(data)
+
+
 
 def add_project(name, local_path, kanban_project_name):
     projects = load_projects()

@@ -27,19 +27,32 @@ class OrchestratorUI:
         
         # --- VISIBILITY CHECK ---
         geom = self.full_config.get("ui", {}).get("orch_geometry", "1200x750+50+50")
+        is_maximized = self.full_config.get("ui", {}).get("orch_maximized", False)
         try:
             # Parse 1200x750+X+Y
             parts = geom.replace('x', '+').split('+')
             w, h = int(parts[0]), int(parts[1])
             x, y = int(parts[2]), int(parts[3])
             
-            # Check if the top-left corner is on any monitor
-            if not win32api.MonitorFromPoint((x, y), 0):
+            # Check if the coordinates are on any monitor. 
+            # We check multiple points (corners) to be sure it's visible.
+            monitor_found = False
+            for test_x, test_y in [(x+20, y+20), (x+w-20, y+20)]:
+                if win32api.MonitorFromPoint((test_x, test_y), 0): # 0 = MONITOR_DEFAULTTONULL
+                    monitor_found = True
+                    break
+            
+            if not monitor_found:
                 geom = f"{w}x{h}+50+50"
         except:
             geom = "1200x750+50+50"
 
         self.root.geometry(geom)
+        if is_maximized:
+            try:
+                self.root.update_idletasks() # Ensure position is set before zooming
+                self.root.state('zoomed')
+            except: pass
         self.root.configure(bg="#1e1e1e")
         
         self.terminal = engine_terminal.TerminalEngine()
@@ -429,7 +442,15 @@ class OrchestratorUI:
     def on_closing(self):
         self.projects_mgr.stop()
         self.workers_mgr.stop_sync()
-        self.full_config["ui"]["orch_geometry"] = self.root.geometry()
+        
+        # If maximized, save the 'normal' geometry so we can restore it properly
+        if self.root.state() == 'zoomed':
+            self.full_config["ui"]["orch_geometry"] = self.root.wm_geometry()
+            self.full_config["ui"]["orch_maximized"] = True
+        else:
+            self.full_config["ui"]["orch_geometry"] = self.root.geometry()
+            self.full_config["ui"]["orch_maximized"] = False
+
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
         utils_ui.save_full_config(self.full_config); self.root.destroy()
 

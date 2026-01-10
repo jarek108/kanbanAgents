@@ -1,6 +1,11 @@
 import tkinter as tk
 import os
 import json
+import threading
+import time
+
+# Global lock to prevent concurrent file access within the same process
+_config_lock = threading.Lock()
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -14,7 +19,6 @@ class ToolTip:
         if self.tip_window or not self.text: return
         self.tip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(1)
-        # Position logic
         x = self.widget.winfo_rootx() + 20
         y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
         tw.wm_geometry(f"+{x}+{y}")
@@ -37,13 +41,42 @@ def get_config_path():
 
 def load_full_config():
     cfg_path = get_config_path()
-    if os.path.exists(cfg_path):
-        with open(cfg_path, 'r') as f: return json.load(f)
+    with _config_lock:
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"[utils_ui Load Error] {e}")
     return {}
 
 def save_full_config(config):
     cfg_path = get_config_path()
-    with open(cfg_path, 'w') as f: json.dump(config, f, indent=4)
+    temp_path = cfg_path + ".tmp"
+    
+    with _config_lock:
+        try:
+            with open(temp_path, 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            # Retry loop for Windows file contention
+            for i in range(5):
+                try:
+                    if os.path.exists(cfg_path):
+                        os.replace(temp_path, cfg_path)
+                    else:
+                        os.rename(temp_path, cfg_path)
+                    return True
+                except PermissionError:
+                    time.sleep(0.1)
+            raise PermissionError(f"Could not replace {cfg_path} after 5 attempts")
+            
+        except Exception as e:
+            print(f"[Config Save Error] {e}")
+            if os.path.exists(temp_path):
+                try: os.remove(temp_path)
+                except: pass
+            return False
 
 def center_popup(root, popup, width, height):
     root.update_idletasks()

@@ -5,6 +5,7 @@ import sys
 import os
 import re
 import engine_events
+import utils_ui
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
 TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "orchestrator_config.template.json")
@@ -16,16 +17,15 @@ def _get_config_file():
     return CONFIG_FILE
 
 def load_config():
-    cfg_file = _get_config_file()
-    if not os.path.exists(cfg_file): return {}
-    with open(cfg_file, 'r') as f: return json.load(f).get("kanban", {})
+    data = utils_ui.load_full_config()
+    return data.get("kanban", {})
 
 def save_config(updates):
-    cfg_file = _get_config_file()
-    if not os.path.exists(cfg_file): return
-    with open(cfg_file, 'r') as f: full_cfg = json.load(f)
-    full_cfg.get("kanban", {}).update(updates)
-    with open(cfg_file, 'w') as f: json.dump(full_cfg, f, indent=4)
+    data = utils_ui.load_full_config()
+    data.setdefault("kanban", {}).update(updates)
+    utils_ui.save_full_config(data)
+
+
 
 def get_base_url():
     cfg = load_config()

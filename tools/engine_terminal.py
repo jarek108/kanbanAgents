@@ -10,6 +10,7 @@ import time
 import json
 import engine_events
 import uiautomation as auto
+import utils_ui
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
 TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "orchestrator_config.template.json")
@@ -21,16 +22,15 @@ def _get_config_file():
     return CONFIG_FILE
 
 def load_config():
-    cfg_file = _get_config_file()
-    if not os.path.exists(cfg_file): return {}
-    with open(cfg_file, 'r') as f: return json.load(f).get("terminal", {})
+    data = utils_ui.load_full_config()
+    return data.get("terminal", {})
 
 def save_config(updates):
-    cfg_file = _get_config_file()
-    if not os.path.exists(cfg_file): return
-    with open(cfg_file, 'r') as f: full_cfg = json.load(f)
-    full_cfg.setdefault("terminal", {}).update(updates)
-    with open(cfg_file, 'w') as f: json.dump(full_cfg, f, indent=4)
+    data = utils_ui.load_full_config()
+    data.setdefault("terminal", {}).update(updates)
+    utils_ui.save_full_config(data)
+
+
 
 class TerminalEngine:
     def __init__(self):
