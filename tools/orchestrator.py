@@ -77,10 +77,30 @@ class OrchestratorUI:
         
         self.refresh_project_table()
         self.periodic_refresh()
+        
+        # --- AUTO RESTORE ---
+        saved_setup = self.full_config.get("ui", {}).get("last_worker_setup")
+        if saved_setup:
+            print(f"[Orchestrator] Restoring {len(saved_setup)} workers from autosave...")
+            self.workers_mgr.apply_setup(saved_setup)
 
     def on_buffer_update(self, hwnd, content):
         if hwnd == self.terminal.connected_hwnd:
             self.root.after(0, self.update_display, content)
+        
+        # Surgical update of the size column in the treeview
+        self.root.after(0, self.update_tree_size, hwnd, len(content))
+
+    def update_tree_size(self, hwnd, size):
+        for item in self.worker_tree.get_children():
+            values = self.worker_tree.item(item, "values")
+            # The ID column (index 0) is "hwnd:rid"
+            if values and str(hwnd) in values[0]:
+                new_values = list(values)
+                # Size is index 6
+                new_values[6] = f"{size:,}"
+                self.worker_tree.item(item, values=new_values)
+                break
 
     def periodic_refresh(self):
         """UI Tick: Just renders the latest cached data for elapsed times."""
@@ -106,6 +126,9 @@ class OrchestratorUI:
         
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Save Worker Setup", command=self.save_worker_setup)
+        file_menu.add_command(label="Load Worker Setup", command=self.load_worker_setup)
+        file_menu.add_separator()
         file_menu.add_command(label="Settings", command=lambda: orchestrator_popups.open_settings_popup(self))
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.on_closing)
@@ -187,22 +210,27 @@ class OrchestratorUI:
         btn_disconnect.pack(fill=tk.X, pady=2)
         utils_ui.ToolTip(btn_disconnect, "Stop monitoring without killing the process.")
 
-        cols = ("id", "status", "role", "folder", "kanban", "time")
+        cols = ("id", "name", "status", "role", "folder", "kanban", "size", "time")
         self.worker_tree = ttk.Treeview(self.worker_content, columns=cols, show="headings", height=1)
         self.worker_tree.heading("id", text="ID")
+        self.worker_tree.heading("name", text="Name")
         self.worker_tree.heading("status", text="Status")
         self.worker_tree.heading("role", text="Role")
         self.worker_tree.heading("folder", text="Project Folder")
         self.worker_tree.heading("kanban", text="Project Kanban")
+        self.worker_tree.heading("size", text="Size (Chr)")
         self.worker_tree.heading("time", text="Monitor Time")
         
         for c in cols: self.worker_tree.column(c, width=100)
         self.worker_tree.column("id", width=80)
+        self.worker_tree.column("name", width=120)
         self.worker_tree.column("status", width=180)
         self.worker_tree.column("folder", width=250)
         self.worker_tree.column("kanban", width=150)
+        self.worker_tree.column("size", width=80)
         self.worker_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.worker_tree.bind("<<TreeviewSelect>>", self.on_worker_select)
+        self.worker_tree.bind("<Double-Button-1>", self.on_worker_double_click)
 
         # --- MIRROR SECTION ---
         self.mirror_sect = ttk.Frame(self.main_container)
@@ -348,7 +376,18 @@ class OrchestratorUI:
             else:
                 status_str = base_status
 
-            iid = self.worker_tree.insert("", tk.END, values=(w.get('id', '???'), status_str, w['role'], w['folder'], w['kanban'], time_str))
+            size = len(w.get("last_buffer", ""))
+            
+            iid = self.worker_tree.insert("", tk.END, values=(
+                w.get('id', '???'), 
+                w.get('terminal', '???'),
+                status_str, 
+                w.get('role', '???'), 
+                w.get('folder', '???'), 
+                w.get('kanban', '???'),
+                f"{size:,}",
+                time_str
+            ))
             if w.get('id') == selected_id:
                 to_select = iid
         
@@ -403,6 +442,12 @@ class OrchestratorUI:
                 if w.get("last_buffer"):
                     self.update_display(w["last_buffer"])
 
+    def on_worker_double_click(self, event):
+        col = self.worker_tree.identify_column(event.x)
+        # ID is #1, Name is #2
+        if col in ["#1", "#2"]:
+            self.terminal.activate()
+
     def toggle_workers(self):
         if self.worker_content.winfo_viewable():
             self.worker_content.pack_forget()
@@ -440,10 +485,36 @@ class OrchestratorUI:
         cmd = self.cmd_entry.get()
         if cmd and self.terminal.send_command(cmd): self.cmd_entry.delete(0, tk.END); self.root.focus_force()
 
+    def save_worker_setup(self):
+        setup = self.workers_mgr.get_setup()
+        f = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if f:
+            try:
+                with open(f, 'w') as out:
+                    json.dump(setup, out, indent=4)
+                messagebox.showinfo("Success", f"Worker setup saved to {os.path.basename(f)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save setup: {e}")
+
+    def load_worker_setup(self):
+        f = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        if f:
+            try:
+                with open(f, 'r') as infile:
+                    setup = json.load(infile)
+                self.workers_mgr.apply_setup(setup)
+                self.refresh_worker_table()
+                messagebox.showinfo("Success", f"Loaded {len(setup)} workers. Monitoring will begin automatically.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load setup: {e}")
+
     def on_closing(self):
         self.projects_mgr.stop()
         self.workers_mgr.stop_sync()
         
+        # Autosave workers
+        self.full_config.setdefault("ui", {})["last_worker_setup"] = self.workers_mgr.get_setup()
+
         # If maximized, save the 'normal' geometry so we can restore it properly
         if self.root.state() == 'zoomed':
             self.full_config["ui"]["orch_geometry"] = self.root.wm_geometry()

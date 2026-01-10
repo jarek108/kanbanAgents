@@ -81,6 +81,29 @@ class TerminalEngine:
         engine_events.emit("terminal_connected", {"title": title, "hwnd": hwnd, "runtime_id": runtime_id})
         return True
 
+    def activate(self):
+        """Physically brings the connected terminal/tab to the front."""
+        if not self.connected_hwnd or not win32gui.IsWindow(self.connected_hwnd): return False
+        try:
+            # 1. Bring Window to front
+            if win32gui.IsIconic(self.connected_hwnd): 
+                win32gui.ShowWindow(self.connected_hwnd, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(self.connected_hwnd)
+            
+            # 2. If it's a tab, select it via UIA
+            if self.connected_runtime_id:
+                with auto.UIAutomationInitializerInThread():
+                    root = auto.ControlFromHandle(self.connected_hwnd)
+                    if root:
+                        id_tuple = tuple(map(int, self.connected_runtime_id.split(',')))
+                        for child, depth in auto.WalkControl(root, maxDepth=12):
+                            if tuple(child.GetRuntimeId()) == id_tuple:
+                                if "TabItem" in child.ControlTypeName or child.ControlTypeName == "ListItemControl":
+                                    child.GetSelectionItemPattern().Select()
+                                break
+            return True
+        except: return False
+
     def disconnect(self):
         title = self.connected_title
         self.connected_hwnd = None

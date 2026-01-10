@@ -44,6 +44,47 @@ class WorkerManager:
         with self.status_lock:
             return list(self.workers), list(self.worker_status_cache)
 
+    def get_setup(self):
+        """Returns a serializable list of worker configurations."""
+        with self.status_lock:
+            setup = []
+            for w in self.workers:
+                setup.append({
+                    "terminal": w.get("terminal"),
+                    "role": w.get("role"),
+                    "folder": w.get("folder"),
+                    "kanban": w.get("kanban"),
+                    "log_path": w.get("log_path"),
+                    "start_time": w.get("start_time", time.time())
+                })
+            return setup
+
+    def apply_setup(self, setup_data):
+        """Re-initializes the worker list from a saved setup."""
+        if not setup_data or not isinstance(setup_data, list):
+            return
+        
+        with self.status_lock:
+            # We don't clear existing workers to allow merging, 
+            # but usually this is used for a fresh start.
+            for item in setup_data:
+                # Basic validation
+                if not item.get("terminal"): continue
+                
+                worker = {
+                    "terminal": item["terminal"],
+                    "role": item.get("role", "Unknown"),
+                    "folder": item.get("folder", "Unknown"),
+                    "kanban": item.get("kanban", "Unknown"),
+                    "log_path": item.get("log_path"),
+                    "start_time": item.get("start_time", time.time()),
+                    "status": "Offline",
+                    "id": "???"
+                }
+                self.workers.append(worker)
+        
+        # Identity resolution will happen automatically in the sync loop
+
     def _resolve_worker_identity(self, w, current_window_list):
         """Finds HWND and Runtime ID for a worker based on its terminal title using a provided window list."""
         if w.get("hwnd") and win32gui.IsWindow(w["hwnd"]):
@@ -198,7 +239,10 @@ class WorkerManager:
                         w["walks"] = w.get("walks", 0) + (1 if not hit else 0)
 
                         if content is not None:
-                            w["last_buffer"] = content
+                            if content != w.get("last_buffer"):
+                                w["last_buffer"] = content
+                                needs_refresh = True
+
                             if w.get("status") != "Online":
                                 w["status"] = "Online"
                                 needs_refresh = True
