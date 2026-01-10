@@ -89,13 +89,18 @@ def launch_worker(project, role):
     cmd_str = f'Start-Transcript -Path "{log_file}" -Append; Write-Host "--- Worker Started: {role} in {project["name"]} ---"; cd "{path}"'
     
     try:
-        # Launching via 'start' is the most reliable way to get a new window with a title
-        # and it handles the complex powershell command string well.
+        # Use Windows Terminal (wt.exe) to group agents in a named window "Agents".
+        # IMPORTANT: semicolons must be escaped with \; for wt.exe parser
+        wt_cmd_str = cmd_str.replace(';', '\;')
+        full_cmd = f'wt -w Agents nt --title "{title}" powershell -NoExit -Command "{wt_cmd_str}"'
+        print(f"[DEBUG] Executing: {full_cmd}")
+        subprocess.Popen(full_cmd, shell=True)
+        pid = None 
+    except Exception as e:
+        print(f"[DEBUG] WT launch failed: {e}")
+        # Fallback to standard start if WT fails
         full_cmd = f'start "{title}" powershell -NoExit -Command "{cmd_str}"'
         subprocess.Popen(full_cmd, shell=True)
-        pid = None # 'start' doesn't give us the final PID easily, but title discovery will find it
-    except Exception as e:
-        print(f"[DEBUG] Launch failed: {e}")
         pid = None
     
     engine_events.emit("worker_launched", {

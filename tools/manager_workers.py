@@ -16,7 +16,7 @@ class WorkerManager:
         self.is_syncing = False
         self.status_lock = threading.Lock()
         self.on_update_callback = None
-        self.on_buffer_callback = None # (hwnd, content)
+        self.on_buffer_callback = None # (hwnd, rid, content)
 
     def start_sync(self):
         if not self.is_syncing:
@@ -65,12 +65,8 @@ class WorkerManager:
             return
         
         with self.status_lock:
-            # We don't clear existing workers to allow merging, 
-            # but usually this is used for a fresh start.
             for item in setup_data:
-                # Basic validation
                 if not item.get("terminal"): continue
-                
                 worker = {
                     "terminal": item["terminal"],
                     "role": item.get("role", "Unknown"),
@@ -82,25 +78,30 @@ class WorkerManager:
                     "id": "???"
                 }
                 self.workers.append(worker)
-        
-        # Identity resolution will happen automatically in the sync loop
 
-    def _resolve_worker_identity(self, w, current_window_list):
-        """Finds HWND and Runtime ID for a worker based on its terminal title using a provided window list."""
+    def _resolve_worker_identity(self, w, current_window_list, used_rids):
+        """Finds HWND and Runtime ID for a worker based on its terminal title.
+        Ensures that a Runtime ID is not used by more than one worker.
+        """
+        # If already resolved and still valid, mark RID as used and return
         if w.get("hwnd") and win32gui.IsWindow(w["hwnd"]):
-            return False # Already resolved and valid
+            used_rids.add(w.get("runtime_id"))
+            return False
 
         for title, hwnd, rid in current_window_list:
+            if rid in used_rids:
+                continue
+            
             if w["terminal"] == title:
                 w["hwnd"] = hwnd
                 w["runtime_id"] = rid
-                short_rid = rid.split("-")[-1] if rid and "-" in rid else (rid[:8] if rid else "?")
-                w["id"] = f"{hwnd}:{short_rid}"
+                # Use the full RID for internal ID to ensure uniqueness
+                w["id"] = f"{hwnd}:{rid}"
+                used_rids.add(rid)
                 return True
         return False
 
     def _uia_sync_loop(self):
-        """Persistent background thread for multi-worker mirroring with node caching and window list sharing."""
         with auto.UIAutomationInitializerInThread():
             while self.is_syncing:
                 with self.status_lock:
@@ -108,29 +109,27 @@ class WorkerManager:
 
                 needs_refresh = False
                 new_worker_times = []
-                
-                # Fetch window list ONCE per cycle to share among all offline workers
                 cached_window_list = self.terminal.get_window_list()
+                
+                # Track RIDs claimed in this cycle to prevent collisions
+                used_rids = set()
 
                 for w in current_workers:
                     try:
-                        # 1. Update Elapsed Time
                         elapsed = int(time.time() - w['start_time'])
                         mins, secs = divmod(elapsed, 60)
                         new_worker_times.append(f"{mins}m {secs}s")
 
-                        # 2. Resolve HWND/ID if missing (using shared window list)
-                        if self._resolve_worker_identity(w, cached_window_list):
+                        if self._resolve_worker_identity(w, cached_window_list, used_rids):
                             needs_refresh = True
                         
                         hwnd = w.get("hwnd")
                         rid = w.get("runtime_id")
                         
-                        # 3. Capture buffer (Try Live UIA if Active -> Try Log File -> Fallback)
                         content = None
                         hit = False
                         
-                        # Check if this tab is the ACTIVE one in its window
+                        # Check if active
                         is_active = False
                         if hwnd and win32gui.IsWindow(hwnd):
                             try:
@@ -144,53 +143,46 @@ class WorkerManager:
                                     if "TabItem" in target_node.ControlTypeName:
                                         sel_pat = target_node.GetSelectionItemPattern()
                                         if sel_pat and sel_pat.IsSelected: is_active = True
-                                    else: is_active = True # Standalone window
+                                    else: is_active = True
                             except: pass
 
-                        # PRIORITY 1: Live UIA (Only for the Active Tab for live typing)
+                        # PRIORITY 1: Live UIA (Active Tab)
                         if is_active:
                             content = self.terminal.get_buffer_text(hwnd, w["terminal"], rid)
                             if content: hit = True
 
-                        # PRIORITY 2: Log File (For Background Tabs or if UIA failed)
-                        if content is None:
-                            log_path = w.get("log_path")
-                            if log_path and os.path.exists(log_path):
-                                for enc in ['utf-8', 'utf-16', 'utf-16-le', 'cp1252']:
-                                    try:
-                                        with open(log_path, 'r', encoding=enc, errors='ignore') as f:
-                                            raw_content = f.read()
-                                        if raw_content:
-                                            # Filter out Transcript metadata
-                                            lines = raw_content.splitlines()
-                                            clean_lines = []
-                                            skip_keywords = ["**********************", "Windows PowerShell transcript start", "Windows PowerShell transcript end", "Username:", "RunAs User:", "Configuration Name:", "Machine:", "Host Application:", "Process ID:", "PSVersion:", "PSEdition:", "OS:", "CLRVersion:", "BuildVersion:", "Start time:", "End time:"]
-                                            for line in lines:
-                                                if not any(k in line for k in skip_keywords): clean_lines.append(line)
-                                            content = "\n".join(clean_lines).strip()
-                                            hit = True
-                                            break
-                                    except: continue
+                        # PRIORITY 2: Log File (Background)
+                        log_path = w.get("log_path")
+                        if content is None and log_path and os.path.exists(log_path):
+                            for enc in ['utf-8', 'utf-16', 'utf-16-le', 'cp1252']:
+                                try:
+                                    with open(log_path, 'r', encoding=enc, errors='ignore') as f:
+                                        raw_content = f.read()
+                                    if raw_content:
+                                        content = raw_content.strip()
+                                        hit = True
+                                        break
+                                except: continue
+
+                        # Check for PROMOTION (Independent of active status)
+                        if not log_path and hwnd and win32gui.IsWindow(hwnd):
+                            # Only promote if we haven't started promoting yet
+                            if not w.get("is_promoting"):
+                                w["is_promoting"] = True
+                                new_log = os.path.join(os.environ.get('TEMP', '.'), f"promoted_{int(time.time())}_{w['terminal']}.log")
+                                w["log_path"] = new_log
+                                cmd = f'Start-Transcript -Path "{new_log}" -Append; Clear-Host'
+                                self.terminal.send_command(cmd)
+                                print(f"[WorkerManager] Promoting {w['terminal']} to logging tier...")
 
                         if content is None:
-                            # If no log, and no window, it's definitely offline
                             if not hwnd or not win32gui.IsWindow(hwnd):
                                 if w.get("status") != "Offline":
                                     w["status"] = "Offline"
                                     needs_refresh = True
                                 continue
 
-                            # Try to PROMOTE a connected tab to logging if it's Online but has no log
-                            if not log_path and w.get("status") == "Online":
-                                # Create a log path
-                                new_log = os.path.join(os.environ.get('TEMP', '.'), f"promoted_{int(time.time())}_{w['terminal']}.log")
-                                w["log_path"] = new_log
-                                # Inject the command to start transcription
-                                cmd = f'Start-Transcript -Path "{new_log}" -Append; Clear-Host'
-                                self.terminal.send_command(cmd)
-                                print(f"[WorkerManager] Promoting {w['terminal']} to logging tier...")
-
-                            # Fallback PRIORITY 3: UIA Cache (for non-active tabs without logs)
+                            # Fallback PRIORITY 3: UIA Cache
                             cache_key = (hwnd, rid)
                             cached_node = self._node_cache.get(cache_key)
                             if cached_node:
@@ -201,39 +193,17 @@ class WorkerManager:
                                 except: del self._node_cache[cache_key]
 
                         if content is None:
-                            # If it's a tab and not selected, get_buffer_text returned None.
-                            # We can try capture_with_switch if enough time has passed.
                             now = time.time()
                             last_switch = w.get("last_switch_time", 0)
-                            
-                            # Only switch if it's been at least 5 seconds since last switch
                             if now - last_switch > 5:
-                                content = self.terminal.capture_with_switch(
-                                    hwnd=hwnd,
-                                    title=w["terminal"],
-                                    runtime_id=rid
-                                )
+                                content = self.terminal.capture_with_switch(hwnd, w["terminal"], rid)
                                 w["last_switch_time"] = now
-                                if content:
-                                    # We don't want to cache the node if we had to switch,
-                                    # because the buffer element might be volatile.
-                                    pass
-                            else:
-                                # Use last buffer if available to avoid flicker/status change
-                                content = w.get("last_buffer")
 
                         if content is None:
-                            # Full re-walk capture (fallback/initial)
-                            content, new_node = self.terminal.get_buffer_text(
-                                hwnd=hwnd, 
-                                title=w["terminal"], 
-                                runtime_id=rid,
-                                return_element=True
-                            )
-                            if new_node:
-                                self._node_cache[cache_key] = new_node
+                            content, new_node = self.terminal.get_buffer_text(hwnd, w["terminal"], rid, return_element=True)
+                            if new_node: self._node_cache[(hwnd, rid)] = new_node
 
-                        # Update stats
+                        # Update stats and buffer
                         w["is_cached"] = hit
                         w["hits"] = w.get("hits", 0) + (1 if hit else 0)
                         w["walks"] = w.get("walks", 0) + (1 if not hit else 0)
@@ -242,23 +212,18 @@ class WorkerManager:
                             if content != w.get("last_buffer"):
                                 w["last_buffer"] = content
                                 needs_refresh = True
-
                             if w.get("status") != "Online":
                                 w["status"] = "Online"
                                 needs_refresh = True
-                            
                             if self.on_buffer_callback:
-                                self.on_buffer_callback(hwnd, content)
+                                self.on_buffer_callback(hwnd, rid, content)
                         else:
-                            # Only mark offline if the window is gone or terminal.get_buffer_text returned None for element too
                             if not win32gui.IsWindow(hwnd):
                                 if w.get("status") != "Offline":
                                     w["status"] = "Offline"
                                     needs_refresh = True
                     except Exception as e:
                         print(f"[WorkerManager Sync Error] {e}")
-                        if len(new_worker_times) < (current_workers.index(w) + 1):
-                            new_worker_times.append("Error")
 
                 with self.status_lock:
                     self.worker_status_cache = new_worker_times
@@ -268,5 +233,3 @@ class WorkerManager:
 
                 ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
                 time.sleep(ms / 1000.0)
-
-

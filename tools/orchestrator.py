@@ -84,18 +84,20 @@ class OrchestratorUI:
             print(f"[Orchestrator] Restoring {len(saved_setup)} workers from autosave...")
             self.workers_mgr.apply_setup(saved_setup)
 
-    def on_buffer_update(self, hwnd, content):
-        if hwnd == self.terminal.connected_hwnd:
+    def on_buffer_update(self, hwnd, rid, content):
+        if hwnd == self.terminal.connected_hwnd and rid == self.terminal.connected_runtime_id:
             self.root.after(0, self.update_display, content)
         
         # Surgical update of the size column in the treeview
-        self.root.after(0, self.update_tree_size, hwnd, len(content))
+        self.root.after(0, self.update_tree_size, hwnd, rid, len(content))
 
-    def update_tree_size(self, hwnd, size):
+    def update_tree_size(self, hwnd, rid, size):
+        # Match using the exact full ID format hwnd:rid
+        target_id = f"{hwnd}:{rid}"
+        
         for item in self.worker_tree.get_children():
             values = self.worker_tree.item(item, "values")
-            # The ID column (index 0) is "hwnd:rid"
-            if values and str(hwnd) in values[0]:
+            if values and values[0] == target_id:
                 new_values = list(values)
                 # Size is index 6
                 new_values[6] = f"{size:,}"
@@ -434,7 +436,7 @@ class OrchestratorUI:
         if 0 <= item_idx < len(workers):
             w = workers[item_idx]
             # Manual resolution needs to fetch window list
-            if self.workers_mgr._resolve_worker_identity(w, self.terminal.get_window_list()):
+            if self.workers_mgr._resolve_worker_identity(w, self.terminal.get_window_list(), set()):
                 self.root.after(0, self.refresh_worker_table)
             
             if w.get("hwnd"):

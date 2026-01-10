@@ -57,17 +57,22 @@ class TerminalEngine:
                 element = auto.ControlFromHandle(hwnd)
                 if not element: continue
                 
-                win_name = element.Name
-                win_id = ",".join(map(str, element.GetRuntimeId()))
-                if win_name: discovered.append((win_name, hwnd, win_id))
-
-                # Use WalkControl to find all TabItems recursively
+                # Check for tabs first
+                has_tabs = False
                 for child, depth in auto.WalkControl(element, maxDepth=10):
                     if child.ControlTypeName in ["TabItemControl", "ListItemControl"]:
                         name = child.Name
                         if name:
                             rid = ",".join(map(str, child.GetRuntimeId()))
                             discovered.append((name, hwnd, rid))
+                            has_tabs = True
+                
+                # Only add the main window as a fallback if it doesn't have internal tabs
+                # or if the window name is distinct.
+                if not has_tabs:
+                    win_name = element.Name
+                    win_id = ",".join(map(str, element.GetRuntimeId()))
+                    if win_name: discovered.append((win_name, hwnd, win_id))
             except Exception as e:
                 print(f"[UIA Discovery Error] {e}")
 
