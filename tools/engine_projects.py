@@ -1,6 +1,7 @@
 import os
 import json
 import subprocess
+import time
 import engine_events
 import tempfile
 import utils_ui
@@ -74,39 +75,36 @@ def get_roles():
     return [f.replace(".md", "") for f in os.listdir(AGENT_DEFS_DIR) if f.endswith(".md")]
 
 def launch_worker(project, role):
-
     title = f"Agent_{project['name']}_{role}"
-
     path = project['local_path']
-
     
-
-    print(f"[DEBUG] Launching direct terminal: {title}")
-
-    # We use cmd /k title {title} to set the name and stay open.
-
-    # CREATE_NEW_CONSOLE ensures it's a separate window.
-
+    # Create a unique log file in the temp directory
+    log_file = os.path.join(tempfile.gettempdir(), f"worker_{int(time.time())}_{title}.log")
+    
+    print(f"[DEBUG] Launching agent terminal with logging: {title} -> {log_file}")
+    
+    # Use PowerShell's Start-Transcript to record everything.
+    # We wrap the command to start the transcript and then drop into a shell.
+    # The 'powershell -NoExit' keeps the terminal open.
+    cmd_str = f'Start-Transcript -Path "{log_file}" -Append; Write-Host "--- Worker Started: {role} in {project["name"]} ---"; cd "{path}"'
+    
     try:
-
-        proc = subprocess.Popen(["cmd", "/k", f"title {title}"], cwd=path, creationflags=subprocess.CREATE_NEW_CONSOLE)
-
-        pid = proc.pid
-
+        # Launching via 'start' is the most reliable way to get a new window with a title
+        # and it handles the complex powershell command string well.
+        full_cmd = f'start "{title}" powershell -NoExit -Command "{cmd_str}"'
+        subprocess.Popen(full_cmd, shell=True)
+        pid = None # 'start' doesn't give us the final PID easily, but title discovery will find it
     except Exception as e:
-
-        print(f"[DEBUG] Direct launch failed: {e}")
-
-        # Fallback to 'start' which also handles titles well
-
-        subprocess.Popen(f'start "{title}" /D "{path}" cmd /k', shell=True)
-
+        print(f"[DEBUG] Launch failed: {e}")
         pid = None
-
     
-
-    engine_events.emit("worker_launched", {"title": title, "project": project, "role": role, "pid": pid})
-
+    engine_events.emit("worker_launched", {
+        "title": title, 
+        "project": project, 
+        "role": role, 
+        "pid": pid,
+        "log_path": log_file
+    })
     return title, pid
 
 def kill_process(pid):

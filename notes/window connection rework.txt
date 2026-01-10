@@ -1,0 +1,40 @@
+The current "tab-walking" approach is necessary because Windows Terminal (the XAML-based
+  frontend) only populates the UIA TextPattern for the active tab to save resources. Inactive
+  tabs effectively "freeze" their UI tree.
+
+  Here are the researched alternatives for monitoring inactive tabs:
+
+  1. Console Buffer Attachment (Win32 API)
+  Each Windows Terminal tab is backed by an OpenConsole.exe process. While the XAML UI hides
+  inactive content, the underlying Win32 console buffer still exists in memory.
+   * Mechanism: Identify the OpenConsole.exe or conhost.exe PID associated with a tab and use
+     AttachConsole(pid) followed by GetConsoleScreenBufferInfo and ReadConsoleOutput.
+   * Pros: Truly simultaneous; no UI flickering; works in the background.
+   * Cons: A single monitoring process can only attach to one console at a time. We would need
+     to spawn one tiny "watcher" process per tab to relay text back to the Orchestrator.
+
+  2. Shell-Level Transcription (Logging)
+  Instead of scraping the UI, we instruct the shell (PowerShell/Bash) to log its own output.
+   * Mechanism: When spawning a worker, send a command like Start-Transcript -Path <tmp_file>
+     -Append. The Orchestrator then simply "tails" these files.
+   * Pros: 100% reliable; zero UIA dependency; captures history even if the window is
+     minimized or hidden.
+   * Cons: Requires shell-specific commands; might include extra metadata in the logs that
+     needs filtering.
+
+  3. Windows Terminal "Export Text" (Command Palette)
+  Windows Terminal has a built-in command to export the buffer.
+   * Mechanism: Use UIA to trigger the Command Palette (Ctrl+Shift+P), type "Export Text", and
+     automate the save dialog.
+   * Pros: Official "clean" text export.
+   * Cons: Very slow; extremely disruptive (pops up dialogs); likely still requires the tab to
+     be active.
+
+  4. ConPTY Passthrough (Architectural Shift)
+  Instead of launching "Windows Terminal" directly, the Orchestrator launches workers via a
+  ConPTY (Pseudoconsole) library.
+   * Mechanism: The Orchestrator acts as the "terminal server," holding the buffer, and merely
+     pipes the output to a window for display.
+   * Pros: Total control over the data stream; professional-grade architecture.
+   * Cons: Significant refactor of engine_terminal.py; requires managing the terminal state
+     manually.

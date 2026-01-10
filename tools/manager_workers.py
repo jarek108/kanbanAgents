@@ -1,5 +1,6 @@
 import threading
 import time
+import os
 import win32gui
 import uiautomation as auto
 import engine_terminal
@@ -84,27 +85,79 @@ class WorkerManager:
                         hwnd = w.get("hwnd")
                         rid = w.get("runtime_id")
                         
-                        if not hwnd or not win32gui.IsWindow(hwnd): 
-                            if w.get("status") != "Offline":
-                                w["status"] = "Offline"
-                                needs_refresh = True
-                            continue
-
-                        # 3. Capture buffer (Try Cache -> Re-walk)
+                        # 3. Capture buffer (Try Live UIA if Active -> Try Log File -> Fallback)
                         content = None
-                        cache_key = (hwnd, rid)
-                        cached_node = self._node_cache.get(cache_key)
-                        
                         hit = False
-                        if cached_node:
+                        
+                        # Check if this tab is the ACTIVE one in its window
+                        is_active = False
+                        if hwnd and win32gui.IsWindow(hwnd):
                             try:
-                                content = self.terminal.get_text_from_element(cached_node)
-                                if content is not None:
-                                    hit = True
-                                else:
-                                    del self._node_cache[cache_key]
-                            except:
-                                del self._node_cache[cache_key]
+                                cache_key = (hwnd, rid)
+                                target_node = self._node_cache.get(cache_key)
+                                if not target_node:
+                                    _, target_node = self.terminal.get_buffer_text(hwnd, w["terminal"], rid, return_element=True)
+                                    if target_node: self._node_cache[cache_key] = target_node
+
+                                if target_node:
+                                    if "TabItem" in target_node.ControlTypeName:
+                                        sel_pat = target_node.GetSelectionItemPattern()
+                                        if sel_pat and sel_pat.IsSelected: is_active = True
+                                    else: is_active = True # Standalone window
+                            except: pass
+
+                        # PRIORITY 1: Live UIA (Only for the Active Tab for live typing)
+                        if is_active:
+                            content = self.terminal.get_buffer_text(hwnd, w["terminal"], rid)
+                            if content: hit = True
+
+                        # PRIORITY 2: Log File (For Background Tabs or if UIA failed)
+                        if content is None:
+                            log_path = w.get("log_path")
+                            if log_path and os.path.exists(log_path):
+                                for enc in ['utf-8', 'utf-16', 'utf-16-le', 'cp1252']:
+                                    try:
+                                        with open(log_path, 'r', encoding=enc, errors='ignore') as f:
+                                            raw_content = f.read()
+                                        if raw_content:
+                                            # Filter out Transcript metadata
+                                            lines = raw_content.splitlines()
+                                            clean_lines = []
+                                            skip_keywords = ["**********************", "Windows PowerShell transcript start", "Windows PowerShell transcript end", "Username:", "RunAs User:", "Configuration Name:", "Machine:", "Host Application:", "Process ID:", "PSVersion:", "PSEdition:", "OS:", "CLRVersion:", "BuildVersion:", "Start time:", "End time:"]
+                                            for line in lines:
+                                                if not any(k in line for k in skip_keywords): clean_lines.append(line)
+                                            content = "\n".join(clean_lines).strip()
+                                            hit = True
+                                            break
+                                    except: continue
+
+                        if content is None:
+                            # If no log, and no window, it's definitely offline
+                            if not hwnd or not win32gui.IsWindow(hwnd):
+                                if w.get("status") != "Offline":
+                                    w["status"] = "Offline"
+                                    needs_refresh = True
+                                continue
+
+                            # Try to PROMOTE a connected tab to logging if it's Online but has no log
+                            if not log_path and w.get("status") == "Online":
+                                # Create a log path
+                                new_log = os.path.join(os.environ.get('TEMP', '.'), f"promoted_{int(time.time())}_{w['terminal']}.log")
+                                w["log_path"] = new_log
+                                # Inject the command to start transcription
+                                cmd = f'Start-Transcript -Path "{new_log}" -Append; Clear-Host'
+                                self.terminal.send_command(cmd)
+                                print(f"[WorkerManager] Promoting {w['terminal']} to logging tier...")
+
+                            # Fallback PRIORITY 3: UIA Cache (for non-active tabs without logs)
+                            cache_key = (hwnd, rid)
+                            cached_node = self._node_cache.get(cache_key)
+                            if cached_node:
+                                try:
+                                    content = self.terminal.get_text_from_element(cached_node)
+                                    if content is not None: hit = True
+                                    else: del self._node_cache[cache_key]
+                                except: del self._node_cache[cache_key]
 
                         if content is None:
                             # If it's a tab and not selected, get_buffer_text returned None.
