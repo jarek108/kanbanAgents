@@ -14,31 +14,8 @@ import engine_projects
 import engine_events
 from manager_projects import ProjectManager
 from manager_workers import WorkerManager
-
-class ToolTip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tip_window = None
-        widget.bind("<Enter>", self.show_tip)
-        widget.bind("<Leave>", self.hide_tip)
-
-    def show_tip(self, event=None):
-        if self.tip_window or not self.text: return
-        x, y, _, cy = self.widget.bbox("insert") if hasattr(self.widget, "bbox") and self.widget.bbox("insert") else (0,0,0,0)
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
-        self.tip_window = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(1)
-        tw.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(tw, text=self.text, justify=tk.LEFT, background="#2d2d2d", foreground="#d4d4d4",
-                      relief=tk.SOLID, borderwidth=1, font=("Segoe UI", "9", "normal"), padx=5, pady=3)
-        label.pack()
-
-    def hide_tip(self, event=None):
-        tw = self.tip_window
-        self.tip_window = None
-        if tw: tw.destroy()
+import utils_ui
+import orchestrator_popups
 
 class OrchestratorUI:
     def __init__(self, root):
@@ -46,7 +23,7 @@ class OrchestratorUI:
         self.root.title("Project Orchestrator v3")
         
         # Load main config for UI state
-        self.full_config = self._load_full_config()
+        self.full_config = utils_ui.load_full_config()
         
         # --- VISIBILITY CHECK ---
         geom = self.full_config.get("ui", {}).get("orch_geometry", "1200x750+50+50")
@@ -97,25 +74,6 @@ class OrchestratorUI:
         self.refresh_worker_table()
         self.root.after(1000, self.periodic_refresh)
 
-
-    def _get_config_path(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
-        template_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.template.json")
-        if not os.path.exists(cfg_path) and os.path.exists(template_path):
-            import shutil
-            shutil.copy(template_path, cfg_path)
-        return cfg_path
-
-    def _load_full_config(self):
-        cfg_path = self._get_config_path()
-        if os.path.exists(cfg_path):
-            with open(cfg_path, 'r') as f: return json.load(f)
-        return {}
-
-    def _save_full_config(self):
-        cfg_path = self._get_config_path()
-        with open(cfg_path, 'w') as f: json.dump(self.full_config, f, indent=4)
-
     def setup_styles(self):
         self.style = ttk.Style()
         self.style.theme_use('clam')
@@ -135,7 +93,7 @@ class OrchestratorUI:
         
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Settings", command=self.open_settings_popup)
+        file_menu.add_command(label="Settings", command=lambda: orchestrator_popups.open_settings_popup(self))
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.on_closing)
 
@@ -163,13 +121,13 @@ class OrchestratorUI:
         proj_btns = ttk.Frame(self.proj_content_frame)
         proj_btns.pack(side=tk.RIGHT, padx=5)
 
-        btn_add_proj = ttk.Button(proj_btns, text="+ Add Project", command=self.open_add_project_popup)
+        btn_add_proj = ttk.Button(proj_btns, text="+ Add Project", command=lambda: orchestrator_popups.open_add_project_popup(self))
         btn_add_proj.pack(fill=tk.X, pady=2)
-        ToolTip(btn_add_proj, "Register a new Git repository folder.")
+        utils_ui.ToolTip(btn_add_proj, "Register a new Git repository folder.")
 
         btn_del_proj = ttk.Button(proj_btns, text="- Remove Project", command=self.delete_selected_project)
         btn_del_proj.pack(fill=tk.X, pady=2)
-        ToolTip(btn_del_proj, "Delete the selected project from registry.")
+        utils_ui.ToolTip(btn_del_proj, "Delete the selected project from registry.")
 
         p_cols = ("id", "path", "kanban", "repo", "branch", "status")
         self.project_tree = ttk.Treeview(self.proj_content_frame, columns=p_cols, show="headings", height=1)
@@ -200,21 +158,21 @@ class OrchestratorUI:
         worker_btns = ttk.Frame(self.worker_content)
         worker_btns.pack(side=tk.RIGHT, padx=5)
         
-        btn_create = ttk.Button(worker_btns, text="Create", command=self.open_spawn_worker_popup)
+        btn_create = ttk.Button(worker_btns, text="Create", command=lambda: orchestrator_popups.open_spawn_worker_popup(self))
         btn_create.pack(fill=tk.X, pady=2)
-        ToolTip(btn_create, "Spawn a new agent terminal for a project.")
+        utils_ui.ToolTip(btn_create, "Spawn a new agent terminal for a project.")
 
         btn_kill = ttk.Button(worker_btns, text="Kill", command=self.kill_selected_worker)
         btn_kill.pack(fill=tk.X, pady=2)
-        ToolTip(btn_kill, "Terminate the process and remove from monitoring.")
+        utils_ui.ToolTip(btn_kill, "Terminate the process and remove from monitoring.")
 
-        btn_connect = ttk.Button(worker_btns, text="Connect", command=self.open_connect_worker_popup)
+        btn_connect = ttk.Button(worker_btns, text="Connect", command=lambda: orchestrator_popups.open_connect_worker_popup(self))
         btn_connect.pack(fill=tk.X, pady=2)
-        ToolTip(btn_connect, "Add an existing terminal window to the monitoring list.")
+        utils_ui.ToolTip(btn_connect, "Add an existing terminal window to the monitoring list.")
 
         btn_disconnect = ttk.Button(worker_btns, text="Disconnect", command=self.remove_selected_worker)
         btn_disconnect.pack(fill=tk.X, pady=2)
-        ToolTip(btn_disconnect, "Stop monitoring without killing the process.")
+        utils_ui.ToolTip(btn_disconnect, "Stop monitoring without killing the process.")
 
         cols = ("id", "status", "role", "folder", "kanban", "time")
         self.worker_tree = ttk.Treeview(self.worker_content, columns=cols, show="headings", height=1)
@@ -260,163 +218,13 @@ class OrchestratorUI:
         self.cmd_entry = ttk.Entry(self.cmd_frame)
         self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.cmd_entry.bind("<Return>", self.send_command)
-        ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
+        utils_ui.ToolTip(self.cmd_entry, "Type a command and press Enter to send it directly to the connected agent terminal.")
         
         self.terminal_display = scrolledtext.ScrolledText(
             self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
             padx=10, pady=10, borderwidth=0, highlightthickness=0
         )
         self.terminal_display.pack(fill=tk.BOTH, expand=True)
-
-    def _center_popup(self, popup, width, height):
-        self.root.update_idletasks()
-        px = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - (width // 2)
-        py = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - (height // 2)
-        popup.geometry(f"{width}x{height}+{px}+{py}")
-        popup.transient(self.root)
-        popup.grab_set()
-
-    def open_spawn_worker_popup(self):
-        popup = tk.Toplevel(self.root)
-        popup.title("Create Worker")
-        self._center_popup(popup, 500, 400)
-        
-        frame = ttk.Frame(popup, padding="20")
-        frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Project Selection
-        ttk.Label(frame, text="Select Project:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
-        projects = engine_projects.load_projects()
-        project_names = [p['name'] for p in projects]
-        
-        proj_var = tk.StringVar()
-        proj_dropdown = ttk.Combobox(frame, textvariable=proj_var, values=project_names, state="readonly")
-        if project_names: proj_dropdown.current(0)
-        proj_dropdown.pack(fill=tk.X, pady=(0, 15))
-        
-        # Role Selection
-        ttk.Label(frame, text="Select Role:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
-        roles = engine_projects.get_roles()
-        role_var = tk.StringVar()
-        role_dropdown = ttk.Combobox(frame, textvariable=role_var, values=roles, state="readonly")
-        if roles: role_dropdown.current(0)
-        role_dropdown.pack(fill=tk.X, pady=(0, 20))
-        
-        def on_spawn():
-            p_name = proj_var.get()
-            selected_proj = next((p for p in projects if p['name'] == p_name), None)
-            if not selected_proj: return
-            
-            role = role_var.get()
-            title, pid = engine_projects.launch_worker(selected_proj, role)
-            
-            worker_info = {
-                "id": "Pending",
-                "status": "Starting",
-                "role": role,
-                "folder": selected_proj['local_path'],
-                "kanban": selected_proj['kanban_project_name'],
-                "start_time": time.time(),
-                "terminal": title,
-                "pid": pid,
-                "runtime_id": None
-            }
-            self.workers_mgr.add_worker(worker_info)
-            self.refresh_worker_table()
-
-            if pid: self.root.after(1500, lambda: self.connect_by_pid(pid, title))
-            else: self.root.after(1500, lambda: self.connect_by_title(title))
-            popup.destroy()
-
-        ttk.Button(frame, text="Create Worker", command=on_spawn).pack(pady=10)
-
-    def open_connect_worker_popup(self):
-        popup = tk.Toplevel(self.root)
-        popup.title("Connect Existing Terminal")
-        self._center_popup(popup, 600, 500)
-        
-        frame = ttk.Frame(popup, padding="20")
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        # 1. Terminal Window Selection
-        ttk.Label(frame, text="1. Select Existing Window:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
-        windows = self.terminal.get_window_list()
-        win_map = { f"{t} (HWND: {h}, ID: {rid[:10]}...)": (t, h, rid) for t, h, rid in windows }
-        win_titles = sorted(list(win_map.keys()))
-        
-        win_var = tk.StringVar()
-        win_dropdown = ttk.Combobox(frame, textvariable=win_var, values=win_titles, state="readonly")
-        if win_titles: win_dropdown.current(0)
-        win_dropdown.pack(fill=tk.X, pady=(0, 15))
-
-        # 2. Project Selection
-        ttk.Label(frame, text="2. Associate with Project:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
-        projects = engine_projects.load_projects()
-        
-        proj_var = tk.StringVar()
-        proj_dropdown = ttk.Combobox(frame, textvariable=proj_var, state="readonly")
-        proj_dropdown.pack(fill=tk.X, pady=(0, 15))
-
-        # 3. Role Selection
-        ttk.Label(frame, text="3. Associate with Role:", font=("Segoe UI", 9, "bold")).pack(fill=tk.X, pady=(0, 5))
-        roles = ["?"] + engine_projects.get_roles()
-        role_var = tk.StringVar(value="?")
-        role_dropdown = ttk.Combobox(frame, textvariable=role_var, values=roles, state="readonly")
-        role_dropdown.pack(fill=tk.X, pady=(0, 20))
-
-        def update_project_list(*args):
-            if not win_var.get(): return
-            _, hwnd, _ = win_map[win_var.get()]
-            cwd = self.terminal.get_process_cwd(hwnd)
-            
-            filtered_names = ["None"]
-            suggested_idx = 0
-            
-            if cwd:
-                # Find projects that are subpaths or roots of this CWD
-                norm_cwd = os.path.normpath(cwd).lower()
-                for p in projects:
-                    p_path = os.path.normpath(p['local_path']).lower()
-                    if norm_cwd.startswith(p_path) or p_path.startswith(norm_cwd):
-                        filtered_names.append(p['name'])
-                        suggested_idx = len(filtered_names) - 1
-            else:
-                filtered_names.extend([p['name'] for p in projects])
-
-            proj_dropdown['values'] = filtered_names
-            proj_dropdown.current(suggested_idx)
-
-        win_var.trace_add("write", update_project_list)
-        update_project_list() # Initial trigger
-
-        def on_connect():
-            if not win_var.get() or not proj_var.get(): return
-            
-            title, hwnd, rid = win_map[win_var.get()]
-            p_name = proj_var.get()
-            selected_proj = next((p for p in projects if p['name'] == p_name), None)
-            role = role_var.get()
-
-            short_rid = rid.split("-")[-1] if rid and "-" in rid else (rid[:8] if rid else "?")
-            worker_info = {
-                "id": f"{hwnd}:{short_rid}",
-                "status": "Connected",
-                "role": role,
-                "folder": selected_proj['local_path'] if selected_proj else "N/A",
-                "kanban": selected_proj['kanban_project_name'] if selected_proj else "None",
-                "start_time": time.time(),
-                "terminal": title,
-                "runtime_id": rid,
-                "hwnd": hwnd,
-                "pid": None # Manually connected
-            }
-            self.workers_mgr.add_worker(worker_info)
-            
-            self.refresh_worker_table()
-            self.connect_to_hwnd(hwnd, title, rid)
-            popup.destroy()
-
-        ttk.Button(frame, text="Add to Monitoring", command=on_connect).pack(pady=10)
 
     def kill_selected_worker(self):
         sel = self.worker_tree.selection()
@@ -441,36 +249,6 @@ class OrchestratorUI:
         if confirmed:
             self.workers_mgr.remove_worker(item_idx)
             self.refresh_worker_table()
-
-    def on_project_select(self, event=None):
-        pass
-
-
-    def open_add_project_popup(self):
-        folder = filedialog.askdirectory(initialdir=os.getcwd(), title="Select Project Folder")
-        if not folder: return
-        popup = tk.Toplevel(self.root); popup.title("Project Details")
-        self._center_popup(popup, 500, 300)
-        frame = ttk.Frame(popup, padding="20"); frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(frame, text="ID (Unique):").pack(fill=tk.X)
-        name_entry = ttk.Entry(frame); name_entry.insert(0, os.path.basename(folder)); name_entry.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(frame, text="Kanban Project Name:").pack(fill=tk.X)
-        kanban_entry = ttk.Entry(frame); kanban_entry.insert(0, name_entry.get()); kanban_entry.pack(fill=tk.X, pady=(0, 20))
-        def on_save():
-            new_id = name_entry.get().strip()
-            if not new_id: return
-            
-            # Uniqueness check
-            existing = engine_projects.load_projects()
-            if any(p['name'] == new_id for p in existing):
-                messagebox.showerror("Error", f"Project ID '{new_id}' already exists!")
-                return
-
-            if new_id and kanban_entry.get():
-                engine_projects.add_project(new_id, folder, kanban_project_name=kanban_entry.get())
-                self.refresh_project_table()
-                popup.destroy()
-        ttk.Button(frame, text="Save Project", command=on_save).pack()
 
     def remove_selected_worker(self):
         sel = self.worker_tree.selection()
@@ -531,70 +309,6 @@ class OrchestratorUI:
             if messagebox.askyesno("Delete", f"Remove project {pid}?"):
                 engine_projects.delete_project(pid)
                 self.refresh_project_table()
-
-    def open_settings_popup(self):
-        popup = tk.Toplevel(self.root); popup.title("Global Settings")
-        self._center_popup(popup, 500, 750)
-        main = ttk.Frame(popup, padding=20); main.pack(fill=tk.BOTH, expand=True)
-        
-        descriptions = {
-            "ip": "The IP address of the Kanban server.",
-            "port": "The network port for the Kanban API connection.",
-            "last_project": "The project that will be selected by default on startup.",
-            "last_user": "The default user to monitor in the Kanban board.",
-            "poll_interval": "Seconds between Kanban API update checks.",
-            "sync_interval_ms": "Milliseconds between terminal screen captures.",
-            "last_title": "Window title of the last connected agent terminal.",
-            "last_geometry": "Saved window size/position of the agent terminal.",
-            "git_refresh_ms": "Milliseconds between Git status and branch checks.",
-            "orch_geometry": "The Orchestrator's own window size and screen coordinates.",
-            "show_terminal": "Determines if the Live Terminal Mirror is visible on startup.",
-            "table_max_height": "Maximum rows to display in UI tables before scrolling."
-        }
-
-        sections = ["kanban", "terminal", "ui"]
-        entries = {}
-        for section in sections:
-            ttk.Label(main, text=f"[{section.upper()}]", font=("Segoe UI", 10, "bold")).pack(fill=tk.X, pady=(10, 5))
-            for key, val in self.full_config.get(section, {}).items():
-                if isinstance(val, (str, int, float, bool)):
-                    f = ttk.Frame(main); f.pack(fill=tk.X, pady=2)
-                    label_text = key
-                    if key == "poll_interval": label_text = "poll_interval (s)"
-                    if key == "sync_interval_ms": label_text = "sync_interval (ms)"
-                    
-                    lbl = ttk.Label(f, text=f"{label_text}:", width=25)
-                    lbl.pack(side=tk.LEFT)
-                    if key in descriptions: ToolTip(lbl, descriptions[key])
-
-                    if isinstance(val, bool):
-                        w = ttk.Combobox(f, values=["True", "False"], state="readonly")
-                        w.set(str(val))
-                        w.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                    else:
-                        w = ttk.Entry(f)
-                        w.insert(0, str(val))
-                        w.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                    
-                    entries[(section, key)] = w
-        
-        def save():
-            try:
-                for (sec, key), entry in entries.items():
-                    orig_val = self.full_config[sec][key]
-                    new_val_str = entry.get()
-                    if type(orig_val) is bool:
-                        new_val = new_val_str.lower() in ("true", "1", "yes")
-                    elif isinstance(orig_val, int): new_val = int(new_val_str)
-                    elif isinstance(orig_val, float): new_val = float(new_val_str)
-                    else: new_val = new_val_str
-                    self.full_config[sec][key] = new_val
-                self._save_full_config()
-                popup.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Invalid value: {e}")
-        
-        ttk.Button(main, text="Save All", command=save).pack(pady=20)
 
     def refresh_worker_table(self):
         workers, times = self.workers_mgr.get_workers()
@@ -690,7 +404,7 @@ class OrchestratorUI:
             self.mirror_fold_btn.config(text="-")
             self.output_visible.set(True)
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
-        self._save_full_config()
+        utils_ui.save_full_config(self.full_config)
 
 
     def update_display(self, content):
@@ -706,7 +420,7 @@ class OrchestratorUI:
         self.workers_mgr.stop_sync()
         self.full_config["ui"]["orch_geometry"] = self.root.geometry()
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
-        self._save_full_config(); self.root.destroy()
+        utils_ui.save_full_config(self.full_config); self.root.destroy()
 
 if __name__ == "__main__":
     root = tk.Tk(); app = OrchestratorUI(root); root.mainloop()
