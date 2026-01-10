@@ -156,11 +156,12 @@ class OrchestratorUI:
         btn_del_proj.pack(fill=tk.X, pady=2)
         ToolTip(btn_del_proj, "Delete the selected project from registry.")
 
-        p_cols = ("name", "path", "kanban", "repo", "branch", "status")
+        p_cols = ("id", "path", "kanban", "repo", "branch", "status")
         self.project_tree = ttk.Treeview(self.proj_content_frame, columns=p_cols, show="headings", height=1)
         self.project_tree.tag_configure("link", foreground="#569cd6")
         for c in p_cols: 
-            self.project_tree.heading(c, text=c.capitalize())
+            text = "ID" if c == "id" else c.capitalize()
+            self.project_tree.heading(c, text=text)
             self.project_tree.column(c, width=120)
         self.project_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
@@ -200,15 +201,18 @@ class OrchestratorUI:
         btn_disconnect.pack(fill=tk.X, pady=2)
         ToolTip(btn_disconnect, "Stop monitoring without killing the process.")
 
-        cols = ("role", "folder", "kanban", "time", "terminal")
+        cols = ("id", "status", "role", "folder", "kanban", "time")
         self.worker_tree = ttk.Treeview(self.worker_content, columns=cols, show="headings", height=1)
+        self.worker_tree.heading("id", text="ID")
+        self.worker_tree.heading("status", text="Status")
         self.worker_tree.heading("role", text="Role")
         self.worker_tree.heading("folder", text="Project Folder")
         self.worker_tree.heading("kanban", text="Project Kanban")
         self.worker_tree.heading("time", text="Monitor Time")
-        self.worker_tree.heading("terminal", text="Terminal")
         
         for c in cols: self.worker_tree.column(c, width=100)
+        self.worker_tree.column("id", width=80)
+        self.worker_tree.column("status", width=80)
         self.worker_tree.column("folder", width=250)
         self.worker_tree.column("kanban", width=150)
         self.worker_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -224,16 +228,7 @@ class OrchestratorUI:
         self.mirror_fold_btn = ttk.Button(self.mirror_header, text="-", width=3, command=self.toggle_output_panel)
         self.mirror_fold_btn.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.status_icon = tk.Label(self.mirror_header, text="●", fg="red", bg="#2d2d2d", font=("Segoe UI", 11))
-        self.status_icon.pack(side=tk.LEFT)
-        self.status_label = ttk.Label(self.mirror_header, text="Disconnected", style="Header.TLabel")
-        self.status_label.pack(side=tk.LEFT, padx=(2, 15))
-        
-        self.auto_sync_var = tk.BooleanVar(value=True)
-        chk_mirror = tk.Checkbutton(self.mirror_header, text="Mirroring", variable=self.auto_sync_var, bg="#2d2d2d", fg="#d4d4d4", 
-                       selectcolor="#1e1e1e", activebackground="#2d2d2d", font=("Segoe UI", 9), command=self.toggle_auto_sync)
-        chk_mirror.pack(side=tk.LEFT, padx=5)
-        ToolTip(chk_mirror, "Enable/Disable background UIA text capture for the terminal.")
+        ttk.Label(self.mirror_header, text="Live Terminal Mirror", style="Header.TLabel").pack(side=tk.LEFT, padx=5)
 
         # --- TERMINAL MIRROR & COMMAND ---
         self.output_visible = tk.BooleanVar(value=self.full_config.get("ui", {}).get("show_terminal", True))
@@ -301,6 +296,8 @@ class OrchestratorUI:
             title, pid = engine_projects.launch_worker(selected_proj, role)
             
             worker_info = {
+                "id": "Pending",
+                "status": "Starting",
                 "role": role,
                 "folder": selected_proj['local_path'],
                 "kanban": selected_proj['kanban_project_name'],
@@ -386,7 +383,10 @@ class OrchestratorUI:
             selected_proj = next((p for p in projects if p['name'] == p_name), None)
             role = role_var.get()
 
+            short_rid = rid.split("-")[-1] if rid and "-" in rid else (rid[:8] if rid else "?")
             worker_info = {
+                "id": f"{hwnd}:{short_rid}",
+                "status": "Connected",
                 "role": role,
                 "folder": selected_proj['local_path'] if selected_proj else "N/A",
                 "kanban": selected_proj['kanban_project_name'] if selected_proj else "None",
@@ -490,13 +490,22 @@ class OrchestratorUI:
         popup = tk.Toplevel(self.root); popup.title("Project Details")
         self._center_popup(popup, 500, 300)
         frame = ttk.Frame(popup, padding="20"); frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(frame, text="Name (Alias):").pack(fill=tk.X)
+        ttk.Label(frame, text="ID (Unique):").pack(fill=tk.X)
         name_entry = ttk.Entry(frame); name_entry.insert(0, os.path.basename(folder)); name_entry.pack(fill=tk.X, pady=(0, 10))
         ttk.Label(frame, text="Kanban Project Name:").pack(fill=tk.X)
         kanban_entry = ttk.Entry(frame); kanban_entry.insert(0, name_entry.get()); kanban_entry.pack(fill=tk.X, pady=(0, 20))
         def on_save():
-            if name_entry.get() and kanban_entry.get():
-                engine_projects.add_project(name_entry.get(), folder, kanban_project_name=kanban_entry.get())
+            new_id = name_entry.get().strip()
+            if not new_id: return
+            
+            # Uniqueness check
+            existing = engine_projects.load_projects()
+            if any(p['name'] == new_id for p in existing):
+                messagebox.showerror("Error", f"Project ID '{new_id}' already exists!")
+                return
+
+            if new_id and kanban_entry.get():
+                engine_projects.add_project(new_id, folder, kanban_project_name=kanban_entry.get())
                 self.refresh_project_table()
                 popup.destroy()
         ttk.Button(frame, text="Save Project", command=on_save).pack()
@@ -516,10 +525,10 @@ class OrchestratorUI:
             cache = dict(self.project_status_cache)
         
         # Save selection
-        selected_name = None
+        selected_id = None
         sel = self.project_tree.selection()
         if sel:
-            selected_name = self.project_tree.item(sel[0])['values'][0]
+            selected_id = self.project_tree.item(sel[0])['values'][0]
 
         self.project_links = {}
         for i in self.project_tree.get_children(): self.project_tree.delete(i)
@@ -533,7 +542,7 @@ class OrchestratorUI:
                 os.path.basename(r) if r else "N/A", b, s
             ), tags=("link",))
             
-            if p['name'] == selected_name:
+            if p['name'] == selected_id:
                 to_select = iid
 
             self.project_links[(iid, "path")] = p['local_path']
@@ -551,7 +560,7 @@ class OrchestratorUI:
         col = self.project_tree.identify_column(event.x)
         row = self.project_tree.identify_row(event.y)
         if row and col:
-            cols = ("name", "path", "kanban", "repo", "branch", "status")
+            cols = ("id", "path", "kanban", "repo", "branch", "status")
             c_name = cols[int(col[1:])-1]
             l = self.project_links.get((row, c_name))
             if l: webbrowser.open(l) if l.startswith("http") else os.startfile(l)
@@ -559,9 +568,9 @@ class OrchestratorUI:
     def delete_selected_project(self):
         sel = self.project_tree.selection()
         if sel:
-            name = self.project_tree.item(sel[0])['values'][0]
-            if messagebox.askyesno("Delete", f"Remove {name}?"):
-                engine_projects.delete_project(name)
+            pid = self.project_tree.item(sel[0])['values'][0]
+            if messagebox.askyesno("Delete", f"Remove project {pid}?"):
+                engine_projects.delete_project(pid)
                 self.refresh_project_table()
 
     def open_settings_popup(self):
@@ -576,7 +585,6 @@ class OrchestratorUI:
             "last_user": "The default user to monitor in the Kanban board.",
             "poll_interval": "Seconds between Kanban API update checks.",
             "sync_interval_ms": "Milliseconds between terminal screen captures.",
-            "auto_sync": "Enable background capturing of terminal text.",
             "last_title": "Window title of the last connected agent terminal.",
             "last_geometry": "Saved window size/position of the agent terminal.",
             "git_refresh_ms": "Milliseconds between Git status and branch checks.",
@@ -635,18 +643,18 @@ class OrchestratorUI:
             times = list(self.worker_status_cache)
             
         # Save selection
-        selected_terminal = None
+        selected_id = None
         sel = self.worker_tree.selection()
         if sel:
-            selected_terminal = self.worker_tree.item(sel[0])['values'][4] # terminal column
+            selected_id = self.worker_tree.item(sel[0])['values'][0] # ID column
 
         for i in self.worker_tree.get_children(): self.worker_tree.delete(i)
         
         to_select = None
         for idx, w in enumerate(workers):
             time_str = times[idx] if idx < len(times) else "Calculating..."
-            iid = self.worker_tree.insert("", tk.END, values=(w['role'], w['folder'], w['kanban'], time_str, w['terminal']))
-            if w['terminal'] == selected_terminal:
+            iid = self.worker_tree.insert("", tk.END, values=(w.get('id', '???'), w.get('status', '???'), w['role'], w['folder'], w['kanban'], time_str))
+            if w.get('id') == selected_id:
                 to_select = iid
         
         if to_select:
@@ -682,10 +690,23 @@ class OrchestratorUI:
 
     def connect_to_hwnd(self, hwnd, title, rid=None):
         if self.terminal.connect(hwnd, title, rid):
-            self.status_icon.config(fg="green"); self.status_label.config(text=f"Mirroring: {title[:20]}...")
             if not self.is_syncing:
                 self.is_syncing = True
                 threading.Thread(target=self._uia_sync_loop, daemon=True).start()
+
+    def _resolve_worker_identity(self, w):
+        """Finds HWND and Runtime ID for a worker based on its terminal title."""
+        if w.get("hwnd") and win32gui.IsWindow(w["hwnd"]):
+            return False # Already resolved and valid
+
+        for title, hwnd, rid in self.terminal.get_window_list():
+            if w["terminal"] == title:
+                w["hwnd"] = hwnd
+                w["runtime_id"] = rid
+                short_rid = rid.split("-")[-1] if rid and "-" in rid else (rid[:8] if rid else "?")
+                w["id"] = f"{hwnd}:{short_rid}"
+                return True
+        return False
 
     def on_worker_select(self, event=None):
         sel = self.worker_tree.selection()
@@ -695,17 +716,11 @@ class OrchestratorUI:
         with self.status_lock:
             if 0 <= item_idx < len(self.workers):
                 w = self.workers[item_idx]
-                # Find HWND and ID from window list if not present
-                if not w.get("hwnd"):
-                    for title, hwnd, rid in self.terminal.get_window_list():
-                        if w["terminal"] == title:
-                            w["hwnd"] = hwnd
-                            w["runtime_id"] = rid
-                            break
+                if self._resolve_worker_identity(w):
+                    self.root.after(0, self.refresh_worker_table)
                 
                 if w.get("hwnd"):
                     self.connect_to_hwnd(w["hwnd"], w["terminal"], w.get("runtime_id"))
-                    # Immediately show cached buffer
                     if w.get("last_buffer"):
                         self.update_display(w["last_buffer"])
 
@@ -737,31 +752,25 @@ class OrchestratorUI:
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
         self._save_full_config()
 
-    def toggle_auto_sync(self): 
-        self.full_config["terminal"]["auto_sync"] = self.auto_sync_var.get(); self._save_full_config()
-
     def _uia_sync_loop(self):
         """Persistent background thread for multi-worker mirroring."""
         import time
         while self.is_syncing:
-            if not self.auto_sync_var.get():
-                time.sleep(1)
-                continue
-
             with self.status_lock:
                 current_workers = list(self.workers)
 
+            needs_refresh = False
             for w in current_workers:
                 try:
                     # 1. Resolve HWND/ID if missing
-                    if not w.get("hwnd"):
-                        for title, hwnd, rid in self.terminal.get_window_list():
-                            if w["terminal"] == title:
-                                w["hwnd"] = hwnd
-                                w["runtime_id"] = rid
-                                break
+                    if self._resolve_worker_identity(w):
+                        needs_refresh = True
                     
-                    if not w.get("hwnd"): continue
+                    if not w.get("hwnd") or not win32gui.IsWindow(w["hwnd"]): 
+                        if w.get("status") != "Offline":
+                            w["status"] = "Offline"
+                            needs_refresh = True
+                        continue
 
                     # 2. Capture buffer
                     content = self.terminal.get_buffer_text(
@@ -772,11 +781,22 @@ class OrchestratorUI:
 
                     if content:
                         w["last_buffer"] = content
+                        if w.get("status") != "Online":
+                            w["status"] = "Online"
+                            needs_refresh = True
+                        
                         # 3. If this is the active terminal, update the UI
                         if w.get("hwnd") == self.terminal.connected_hwnd:
                             self.root.after(0, self.update_display, content)
+                    else:
+                        if w.get("status") != "Offline":
+                            w["status"] = "Offline"
+                            needs_refresh = True
                 except Exception as e:
                     print(f"[Sync Loop Error] {e}")
+
+            if needs_refresh:
+                self.root.after(0, self.refresh_worker_table)
 
             ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
             time.sleep(ms / 1000.0)
