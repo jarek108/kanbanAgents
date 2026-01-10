@@ -10,7 +10,7 @@ class WorkerManager:
         self.terminal = terminal_engine
         self.workers = []
         self.worker_status_cache = [] # List of elapsed time strings
-        self._node_cache = {} # hwnd -> UIA Element
+        self._node_cache = {} # (hwnd, runtime_id) -> UIA Element
         self.is_syncing = False
         self.status_lock = threading.Lock()
         self.on_update_callback = None
@@ -32,9 +32,9 @@ class WorkerManager:
         with self.status_lock:
             if 0 <= index < len(self.workers):
                 w = self.workers.pop(index)
-                hwnd = w.get("hwnd")
-                if hwnd in self._node_cache:
-                    del self._node_cache[hwnd]
+                cache_key = (w.get("hwnd"), w.get("runtime_id"))
+                if cache_key in self._node_cache:
+                    del self._node_cache[cache_key]
                 return w
         return None
 
@@ -53,8 +53,6 @@ class WorkerManager:
                 w["runtime_id"] = rid
                 short_rid = rid.split("-")[-1] if rid and "-" in rid else (rid[:8] if rid else "?")
                 w["id"] = f"{hwnd}:{short_rid}"
-                # Ensure cache is cleared if HWND changed for this worker
-                if hwnd in self._node_cache: del self._node_cache[hwnd]
                 return True
         return False
 
@@ -79,6 +77,7 @@ class WorkerManager:
                         needs_refresh = True
                     
                     hwnd = w.get("hwnd")
+                    rid = w.get("runtime_id")
                     if not hwnd or not win32gui.IsWindow(hwnd): 
                         if w.get("status") != "Offline":
                             w["status"] = "Offline"
@@ -87,24 +86,25 @@ class WorkerManager:
 
                     # 3. Capture buffer (Try Cache -> Re-walk)
                     content = None
-                    cached_node = self._node_cache.get(hwnd)
+                    cache_key = (hwnd, rid)
+                    cached_node = self._node_cache.get(cache_key)
                     
                     if cached_node:
                         content = self.terminal.get_text_from_element(cached_node)
                         if not content:
                             # Cache stale? Clear it and try re-walk
-                            del self._node_cache[hwnd]
+                            del self._node_cache[cache_key]
 
                     if not content:
                         # Full re-walk capture
                         content, new_node = self.terminal.get_buffer_text(
                             hwnd=hwnd, 
                             title=w["terminal"], 
-                            runtime_id=w.get("runtime_id"),
+                            runtime_id=rid,
                             return_element=True
                         )
                         if new_node:
-                            self._node_cache[hwnd] = new_node
+                            self._node_cache[cache_key] = new_node
 
                     if content:
                         w["last_buffer"] = content
