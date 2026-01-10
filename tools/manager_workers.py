@@ -1,0 +1,132 @@
+import threading
+import time
+import win32gui
+import engine_terminal
+import engine_projects
+
+class WorkerManager:
+    def __init__(self, full_config, terminal_engine):
+        self.full_config = full_config
+        self.terminal = terminal_engine
+        self.workers = []
+        self.worker_status_cache = [] # List of elapsed time strings
+        self._node_cache = {} # hwnd -> UIA Element
+        self.is_syncing = False
+        self.status_lock = threading.Lock()
+        self.on_update_callback = None
+        self.on_buffer_callback = None # (hwnd, content)
+
+    def start_sync(self):
+        if not self.is_syncing:
+            self.is_syncing = True
+            threading.Thread(target=self._uia_sync_loop, daemon=True).start()
+
+    def stop_sync(self):
+        self.is_syncing = False
+
+    def add_worker(self, worker_info):
+        with self.status_lock:
+            self.workers.append(worker_info)
+
+    def remove_worker(self, index):
+        with self.status_lock:
+            if 0 <= index < len(self.workers):
+                w = self.workers.pop(index)
+                hwnd = w.get("hwnd")
+                if hwnd in self._node_cache:
+                    del self._node_cache[hwnd]
+                return w
+        return None
+
+    def get_workers(self):
+        with self.status_lock:
+            return list(self.workers), list(self.worker_status_cache)
+
+    def _resolve_worker_identity(self, w):
+        """Finds HWND and Runtime ID for a worker based on its terminal title."""
+        if w.get("hwnd") and win32gui.IsWindow(w["hwnd"]):
+            return False # Already resolved and valid
+
+        for title, hwnd, rid in self.terminal.get_window_list():
+            if w["terminal"] == title:
+                w["hwnd"] = hwnd
+                w["runtime_id"] = rid
+                short_rid = rid.split("-")[-1] if rid and "-" in rid else (rid[:8] if rid else "?")
+                w["id"] = f"{hwnd}:{short_rid}"
+                # Ensure cache is cleared if HWND changed for this worker
+                if hwnd in self._node_cache: del self._node_cache[hwnd]
+                return True
+        return False
+
+    def _uia_sync_loop(self):
+        """Persistent background thread for multi-worker mirroring with node caching."""
+        while self.is_syncing:
+            with self.status_lock:
+                current_workers = list(self.workers)
+
+            needs_refresh = False
+            new_worker_times = []
+
+            for w in current_workers:
+                try:
+                    # 1. Update Elapsed Time
+                    elapsed = int(time.time() - w['start_time'])
+                    mins, secs = divmod(elapsed, 60)
+                    new_worker_times.append(f"{mins}m {secs}s")
+
+                    # 2. Resolve HWND/ID if missing
+                    if self._resolve_worker_identity(w):
+                        needs_refresh = True
+                    
+                    hwnd = w.get("hwnd")
+                    if not hwnd or not win32gui.IsWindow(hwnd): 
+                        if w.get("status") != "Offline":
+                            w["status"] = "Offline"
+                            needs_refresh = True
+                        continue
+
+                    # 3. Capture buffer (Try Cache -> Re-walk)
+                    content = None
+                    cached_node = self._node_cache.get(hwnd)
+                    
+                    if cached_node:
+                        content = self.terminal.get_text_from_element(cached_node)
+                        if not content:
+                            # Cache stale? Clear it and try re-walk
+                            del self._node_cache[hwnd]
+
+                    if not content:
+                        # Full re-walk capture
+                        content, new_node = self.terminal.get_buffer_text(
+                            hwnd=hwnd, 
+                            title=w["terminal"], 
+                            runtime_id=w.get("runtime_id"),
+                            return_element=True
+                        )
+                        if new_node:
+                            self._node_cache[hwnd] = new_node
+
+                    if content:
+                        w["last_buffer"] = content
+                        if w.get("status") != "Online":
+                            w["status"] = "Online"
+                            needs_refresh = True
+                        
+                        if self.on_buffer_callback:
+                            self.on_buffer_callback(hwnd, content)
+                    else:
+                        if w.get("status") != "Offline":
+                            w["status"] = "Offline"
+                            needs_refresh = True
+                except Exception as e:
+                    print(f"[WorkerManager Sync Error] {e}")
+
+            with self.status_lock:
+                self.worker_status_cache = new_worker_times
+
+            if needs_refresh and self.on_update_callback:
+                self.on_update_callback()
+
+            ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
+            time.sleep(ms / 1000.0)
+

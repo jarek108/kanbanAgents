@@ -12,6 +12,8 @@ import engine_terminal
 import engine_kanban
 import engine_projects
 import engine_events
+from manager_projects import ProjectManager
+from manager_workers import WorkerManager
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -64,16 +66,19 @@ class OrchestratorUI:
         self.root.configure(bg="#1e1e1e")
         
         self.terminal = engine_terminal.TerminalEngine()
-        self.is_syncing = False
         self.active_project = None
-        self.workers = [] 
         
-        # --- BACKGROUND STATUS TRACKING ---
-        self.status_lock = threading.Lock()
-        self.project_status_cache = {} # name -> git_info_dict
-        self.worker_status_cache = [] # List of elapsed time strings
-        self.is_running = True
-        threading.Thread(target=self._background_status_loop, daemon=True).start()
+        # --- MANAGERS ---
+        self.projects_mgr = ProjectManager(self.full_config)
+        self.workers_mgr = WorkerManager(self.full_config, self.terminal)
+        
+        # Bind callbacks
+        self.projects_mgr.on_update_callback = lambda: self.root.after(0, self.refresh_project_table)
+        self.workers_mgr.on_update_callback = lambda: self.root.after(0, self.refresh_worker_table)
+        self.workers_mgr.on_buffer_callback = self.on_buffer_update
+        
+        self.projects_mgr.start()
+        self.workers_mgr.start_sync()
         
         self.setup_styles()
         self.setup_ui()
@@ -81,7 +86,17 @@ class OrchestratorUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         self.refresh_project_table()
-        self.periodic_git_refresh()
+        self.periodic_refresh()
+
+    def on_buffer_update(self, hwnd, content):
+        if hwnd == self.terminal.connected_hwnd:
+            self.root.after(0, self.update_display, content)
+
+    def periodic_refresh(self):
+        """UI Tick: Just renders the latest cached data for elapsed times."""
+        self.refresh_worker_table()
+        self.root.after(1000, self.periodic_refresh)
+
 
     def _get_config_path(self):
         cfg_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
@@ -306,8 +321,7 @@ class OrchestratorUI:
                 "pid": pid,
                 "runtime_id": None
             }
-            with self.status_lock:
-                self.workers.append(worker_info)
+            self.workers_mgr.add_worker(worker_info)
             self.refresh_worker_table()
 
             if pid: self.root.after(1500, lambda: self.connect_by_pid(pid, title))
@@ -396,8 +410,7 @@ class OrchestratorUI:
                 "hwnd": hwnd,
                 "pid": None # Manually connected
             }
-            with self.status_lock:
-                self.workers.append(worker_info)
+            self.workers_mgr.add_worker(worker_info)
             
             self.refresh_worker_table()
             self.connect_to_hwnd(hwnd, title, rid)
@@ -410,13 +423,11 @@ class OrchestratorUI:
         if not sel: return
         
         item_idx = self.worker_tree.index(sel[0])
-        worker_to_kill = None
+        workers, _ = self.workers_mgr.get_workers()
         
-        with self.status_lock:
-            if 0 <= item_idx < len(self.workers):
-                worker_to_kill = self.workers[item_idx]
-
-        if not worker_to_kill: return
+        if 0 <= item_idx < len(workers):
+            worker_to_kill = workers[item_idx]
+        else: return
 
         confirmed = False
         if worker_to_kill.get('pid'):
@@ -428,61 +439,12 @@ class OrchestratorUI:
                 confirmed = True
 
         if confirmed:
-            with self.status_lock:
-                # Re-verify index in case list changed during prompt
-                if 0 <= item_idx < len(self.workers) and self.workers[item_idx] == worker_to_kill:
-                    self.workers.pop(item_idx)
-                else:
-                    # Fallback: find by identity if index shifted
-                    if worker_to_kill in self.workers:
-                        self.workers.remove(worker_to_kill)
+            self.workers_mgr.remove_worker(item_idx)
             self.refresh_worker_table()
 
     def on_project_select(self, event=None):
         pass
 
-    def _background_status_loop(self):
-        """Heavy lifting (Git/API) happens here in a separate thread."""
-        while self.is_running:
-            try:
-                # 1. Update Project Statuses
-                projects = engine_projects.load_projects()
-                new_project_cache = {}
-                for p in projects:
-                    git_info = engine_projects.get_git_info(p['local_path'])
-                    kb_url = engine_projects.get_kanban_url(p['kanban_project_name'])
-                    new_project_cache[p['name']] = {
-                        "git": git_info, # (branch, status, root, commit, remote)
-                        "kanban_url": kb_url,
-                        "data": p
-                    }
-
-                # 2. Update Worker Times
-                new_worker_times = []
-                with self.status_lock:
-                    current_workers = list(self.workers)
-                
-                for w in current_workers:
-                    elapsed = int(time.time() - w['start_time'])
-                    mins, secs = divmod(elapsed, 60)
-                    new_worker_times.append(f"{mins}m {secs}s")
-
-                # 3. Commit to cache
-                with self.status_lock:
-                    self.project_status_cache = new_project_cache
-                    self.worker_status_cache = new_worker_times
-            except Exception as e:
-                print(f"[Status Thread Error] {e}")
-            
-            # Sleep based on config
-            ms = self.full_config.get("terminal", {}).get("git_refresh_ms", 3000)
-            time.sleep(ms / 1000.0)
-
-    def periodic_git_refresh(self):
-        """UI Tick: Just renders the latest cached data."""
-        self.refresh_worker_table()
-        self.refresh_project_table()
-        self.root.after(500, self.periodic_git_refresh) # Faster UI response, but heavy work is throttled by thread
 
     def open_add_project_popup(self):
         folder = filedialog.askdirectory(initialdir=os.getcwd(), title="Select Project Folder")
@@ -515,14 +477,11 @@ class OrchestratorUI:
         if sel:
             item_idx = self.worker_tree.index(sel[0])
             if messagebox.askyesno("Disconnect", "Stop monitoring this worker? (The process will keep running)"):
-                with self.status_lock:
-                    if 0 <= item_idx < len(self.workers):
-                        self.workers.pop(item_idx)
+                self.workers_mgr.remove_worker(item_idx)
                 self.refresh_worker_table()
 
     def refresh_project_table(self):
-        with self.status_lock:
-            cache = dict(self.project_status_cache)
+        cache = self.projects_mgr.get_cache()
         
         # Save selection
         selected_id = None
@@ -638,9 +597,7 @@ class OrchestratorUI:
         ttk.Button(main, text="Save All", command=save).pack(pady=20)
 
     def refresh_worker_table(self):
-        with self.status_lock:
-            workers = list(self.workers)
-            times = list(self.worker_status_cache)
+        workers, times = self.workers_mgr.get_workers()
             
         # Save selection
         selected_id = None
@@ -689,40 +646,23 @@ class OrchestratorUI:
             if title.lower() in t.lower(): self.connect_to_hwnd(h, t, rid); return
 
     def connect_to_hwnd(self, hwnd, title, rid=None):
-        if self.terminal.connect(hwnd, title, rid):
-            if not self.is_syncing:
-                self.is_syncing = True
-                threading.Thread(target=self._uia_sync_loop, daemon=True).start()
-
-    def _resolve_worker_identity(self, w):
-        """Finds HWND and Runtime ID for a worker based on its terminal title."""
-        if w.get("hwnd") and win32gui.IsWindow(w["hwnd"]):
-            return False # Already resolved and valid
-
-        for title, hwnd, rid in self.terminal.get_window_list():
-            if w["terminal"] == title:
-                w["hwnd"] = hwnd
-                w["runtime_id"] = rid
-                short_rid = rid.split("-")[-1] if rid and "-" in rid else (rid[:8] if rid else "?")
-                w["id"] = f"{hwnd}:{short_rid}"
-                return True
-        return False
+        self.terminal.connect(hwnd, title, rid)
 
     def on_worker_select(self, event=None):
         sel = self.worker_tree.selection()
         if not sel: return
         
         item_idx = self.worker_tree.index(sel[0])
-        with self.status_lock:
-            if 0 <= item_idx < len(self.workers):
-                w = self.workers[item_idx]
-                if self._resolve_worker_identity(w):
-                    self.root.after(0, self.refresh_worker_table)
-                
-                if w.get("hwnd"):
-                    self.connect_to_hwnd(w["hwnd"], w["terminal"], w.get("runtime_id"))
-                    if w.get("last_buffer"):
-                        self.update_display(w["last_buffer"])
+        workers, _ = self.workers_mgr.get_workers()
+        if 0 <= item_idx < len(workers):
+            w = workers[item_idx]
+            if self.workers_mgr._resolve_worker_identity(w):
+                self.root.after(0, self.refresh_worker_table)
+            
+            if w.get("hwnd"):
+                self.connect_to_hwnd(w["hwnd"], w["terminal"], w.get("runtime_id"))
+                if w.get("last_buffer"):
+                    self.update_display(w["last_buffer"])
 
     def toggle_workers(self):
         if self.worker_content.winfo_viewable():
@@ -752,54 +692,6 @@ class OrchestratorUI:
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
         self._save_full_config()
 
-    def _uia_sync_loop(self):
-        """Persistent background thread for multi-worker mirroring."""
-        import time
-        while self.is_syncing:
-            with self.status_lock:
-                current_workers = list(self.workers)
-
-            needs_refresh = False
-            for w in current_workers:
-                try:
-                    # 1. Resolve HWND/ID if missing
-                    if self._resolve_worker_identity(w):
-                        needs_refresh = True
-                    
-                    if not w.get("hwnd") or not win32gui.IsWindow(w["hwnd"]): 
-                        if w.get("status") != "Offline":
-                            w["status"] = "Offline"
-                            needs_refresh = True
-                        continue
-
-                    # 2. Capture buffer
-                    content = self.terminal.get_buffer_text(
-                        hwnd=w.get("hwnd"), 
-                        title=w["terminal"], 
-                        runtime_id=w.get("runtime_id")
-                    )
-
-                    if content:
-                        w["last_buffer"] = content
-                        if w.get("status") != "Online":
-                            w["status"] = "Online"
-                            needs_refresh = True
-                        
-                        # 3. If this is the active terminal, update the UI
-                        if w.get("hwnd") == self.terminal.connected_hwnd:
-                            self.root.after(0, self.update_display, content)
-                    else:
-                        if w.get("status") != "Offline":
-                            w["status"] = "Offline"
-                            needs_refresh = True
-                except Exception as e:
-                    print(f"[Sync Loop Error] {e}")
-
-            if needs_refresh:
-                self.root.after(0, self.refresh_worker_table)
-
-            ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
-            time.sleep(ms / 1000.0)
 
     def update_display(self, content):
         self.terminal_display.config(state='normal'); self.terminal_display.delete('1.0', tk.END)
@@ -810,6 +702,8 @@ class OrchestratorUI:
         if cmd and self.terminal.send_command(cmd): self.cmd_entry.delete(0, tk.END); self.root.focus_force()
 
     def on_closing(self):
+        self.projects_mgr.stop()
+        self.workers_mgr.stop_sync()
         self.full_config["ui"]["orch_geometry"] = self.root.geometry()
         self.full_config["ui"]["show_terminal"] = self.output_visible.get()
         self._save_full_config(); self.root.destroy()

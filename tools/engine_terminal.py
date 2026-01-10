@@ -120,13 +120,23 @@ class TerminalEngine:
         except:
             return None
 
-    def get_buffer_text(self, hwnd=None, title=None, runtime_id=None):
+    def get_text_from_element(self, element):
+        """Extracts text from a cached UIA element."""
+        try:
+            pattern = element.GetTextPattern()
+            if pattern:
+                return pattern.DocumentRange.GetText(-1)
+        except:
+            pass
+        return None
+
+    def get_buffer_text(self, hwnd=None, title=None, runtime_id=None, return_element=False):
         """Native capture using uiautomation."""
         target_hwnd = hwnd or self.connected_hwnd
         target_title = title or self.connected_title
         target_id = runtime_id or self.connected_runtime_id
 
-        if not target_hwnd or not win32gui.IsWindow(target_hwnd): return None
+        if not target_hwnd or not win32gui.IsWindow(target_hwnd): return (None, None) if return_element else None
         
         try:
             # 1. Try targeting by RuntimeId
@@ -145,21 +155,16 @@ class TerminalEngine:
             if not target_element and target_title:
                 target_element = auto.Control(searchDepth=5, Name=target_title)
 
-            if not target_element: return None
+            if not target_element: return (None, None) if return_element else None
 
             # Find text pattern using WalkControl
             for child, depth in auto.WalkControl(target_element, maxDepth=12):
                 if child.ControlTypeName in ["PaneControl", "DocumentControl", "EditControl"]:
-                    try:
-                        # Some terminals use TextPattern, others just have a Name or Value
-                        pattern = child.GetTextPattern()
-                        if pattern:
-                            text = pattern.DocumentRange.GetText(-1)
-                            if text and len(text.strip()) > 5:
-                                return text
-                    except: pass
+                    text = self.get_text_from_element(child)
+                    if text and len(text.strip()) > 5:
+                        return (text, child) if return_element else text
             
-            return None
+            return (None, None) if return_element else None
         except Exception as e:
-            # print(f"[Capture Error] {e}")
-            return None
+            return (None, None) if return_element else None
+
