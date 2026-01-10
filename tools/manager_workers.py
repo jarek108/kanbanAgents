@@ -89,9 +89,12 @@ class WorkerManager:
                     cache_key = (hwnd, rid)
                     cached_node = self._node_cache.get(cache_key)
                     
+                    hit = False
                     if cached_node:
                         content = self.terminal.get_text_from_element(cached_node)
-                        if not content:
+                        if content:
+                            hit = True
+                        else:
                             # Cache stale? Clear it and try re-walk
                             del self._node_cache[cache_key]
 
@@ -105,6 +108,11 @@ class WorkerManager:
                         )
                         if new_node:
                             self._node_cache[cache_key] = new_node
+
+                    # Update stats
+                    w["is_cached"] = hit
+                    w["hits"] = w.get("hits", 0) + (1 if hit else 0)
+                    w["walks"] = w.get("walks", 0) + (1 if not hit else 0)
 
                     if content:
                         w["last_buffer"] = content

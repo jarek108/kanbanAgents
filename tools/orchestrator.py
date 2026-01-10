@@ -185,7 +185,7 @@ class OrchestratorUI:
         
         for c in cols: self.worker_tree.column(c, width=100)
         self.worker_tree.column("id", width=80)
-        self.worker_tree.column("status", width=80)
+        self.worker_tree.column("status", width=180)
         self.worker_tree.column("folder", width=250)
         self.worker_tree.column("kanban", width=150)
         self.worker_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -324,7 +324,18 @@ class OrchestratorUI:
         to_select = None
         for idx, w in enumerate(workers):
             time_str = times[idx] if idx < len(times) else "Calculating..."
-            iid = self.worker_tree.insert("", tk.END, values=(w.get('id', '???'), w.get('status', '???'), w['role'], w['folder'], w['kanban'], time_str))
+            
+            # Construct enhanced status
+            base_status = w.get('status', '???')
+            if base_status == "Online":
+                indicator = "[C]" if w.get("is_cached") else "[V]"
+                hits = w.get("hits", 0)
+                walks = w.get("walks", 0)
+                status_str = f"{indicator} {base_status} (H:{hits} V:{walks})"
+            else:
+                status_str = base_status
+
+            iid = self.worker_tree.insert("", tk.END, values=(w.get('id', '???'), status_str, w['role'], w['folder'], w['kanban'], time_str))
             if w.get('id') == selected_id:
                 to_select = iid
         
