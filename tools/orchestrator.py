@@ -205,7 +205,7 @@ class OrchestratorUI:
         self.worker_tree.heading("role", text="Role")
         self.worker_tree.heading("folder", text="Project Folder")
         self.worker_tree.heading("kanban", text="Project Kanban")
-        self.worker_tree.heading("time", text="Task Time")
+        self.worker_tree.heading("time", text="Monitor Time")
         self.worker_tree.heading("terminal", text="Terminal")
         
         for c in cols: self.worker_tree.column(c, width=100)
