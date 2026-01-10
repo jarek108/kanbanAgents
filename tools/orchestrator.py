@@ -394,7 +394,8 @@ class OrchestratorUI:
         workers, _ = self.workers_mgr.get_workers()
         if 0 <= item_idx < len(workers):
             w = workers[item_idx]
-            if self.workers_mgr._resolve_worker_identity(w):
+            # Manual resolution needs to fetch window list
+            if self.workers_mgr._resolve_worker_identity(w, self.terminal.get_window_list()):
                 self.root.after(0, self.refresh_worker_table)
             
             if w.get("hwnd"):

@@ -1,6 +1,7 @@
 import threading
 import time
 import win32gui
+import uiautomation as auto
 import engine_terminal
 import engine_projects
 
@@ -42,12 +43,12 @@ class WorkerManager:
         with self.status_lock:
             return list(self.workers), list(self.worker_status_cache)
 
-    def _resolve_worker_identity(self, w):
-        """Finds HWND and Runtime ID for a worker based on its terminal title."""
+    def _resolve_worker_identity(self, w, current_window_list):
+        """Finds HWND and Runtime ID for a worker based on its terminal title using a provided window list."""
         if w.get("hwnd") and win32gui.IsWindow(w["hwnd"]):
             return False # Already resolved and valid
 
-        for title, hwnd, rid in self.terminal.get_window_list():
+        for title, hwnd, rid in current_window_list:
             if w["terminal"] == title:
                 w["hwnd"] = hwnd
                 w["runtime_id"] = rid
@@ -57,86 +58,93 @@ class WorkerManager:
         return False
 
     def _uia_sync_loop(self):
-        """Persistent background thread for multi-worker mirroring with node caching."""
-        import uiautomation as auto
+        """Persistent background thread for multi-worker mirroring with node caching and window list sharing."""
         with auto.UIAutomationInitializerInThread():
             while self.is_syncing:
                 with self.status_lock:
                     current_workers = list(self.workers)
 
-            needs_refresh = False
-            new_worker_times = []
+                needs_refresh = False
+                new_worker_times = []
+                
+                # Fetch window list ONCE per cycle to share among all offline workers
+                cached_window_list = self.terminal.get_window_list()
 
-            for w in current_workers:
-                try:
-                    # 1. Update Elapsed Time
-                    elapsed = int(time.time() - w['start_time'])
-                    mins, secs = divmod(elapsed, 60)
-                    new_worker_times.append(f"{mins}m {secs}s")
+                for w in current_workers:
+                    try:
+                        # 1. Update Elapsed Time
+                        elapsed = int(time.time() - w['start_time'])
+                        mins, secs = divmod(elapsed, 60)
+                        new_worker_times.append(f"{mins}m {secs}s")
 
-                    # 2. Resolve HWND/ID if missing
-                    if self._resolve_worker_identity(w):
-                        needs_refresh = True
-                    
-                    hwnd = w.get("hwnd")
-                    rid = w.get("runtime_id")
-                    if not hwnd or not win32gui.IsWindow(hwnd): 
-                        if w.get("status") != "Offline":
-                            w["status"] = "Offline"
-                            needs_refresh = True
-                        continue
-
-                    # 3. Capture buffer (Try Cache -> Re-walk)
-                    content = None
-                    cache_key = (hwnd, rid)
-                    cached_node = self._node_cache.get(cache_key)
-                    
-                    hit = False
-                    if cached_node:
-                        content = self.terminal.get_text_from_element(cached_node)
-                        if content:
-                            hit = True
-                        else:
-                            # Cache stale? Clear it and try re-walk
-                            del self._node_cache[cache_key]
-
-                    if not content:
-                        # Full re-walk capture
-                        content, new_node = self.terminal.get_buffer_text(
-                            hwnd=hwnd, 
-                            title=w["terminal"], 
-                            runtime_id=rid,
-                            return_element=True
-                        )
-                        if new_node:
-                            self._node_cache[cache_key] = new_node
-
-                    # Update stats
-                    w["is_cached"] = hit
-                    w["hits"] = w.get("hits", 0) + (1 if hit else 0)
-                    w["walks"] = w.get("walks", 0) + (1 if not hit else 0)
-
-                    if content:
-                        w["last_buffer"] = content
-                        if w.get("status") != "Online":
-                            w["status"] = "Online"
+                        # 2. Resolve HWND/ID if missing (using shared window list)
+                        if self._resolve_worker_identity(w, cached_window_list):
                             needs_refresh = True
                         
-                        if self.on_buffer_callback:
-                            self.on_buffer_callback(hwnd, content)
-                    else:
-                        if w.get("status") != "Offline":
-                            w["status"] = "Offline"
-                            needs_refresh = True
-                except Exception as e:
-                    print(f"[WorkerManager Sync Error] {e}")
+                        hwnd = w.get("hwnd")
+                        rid = w.get("runtime_id")
+                        if not hwnd or not win32gui.IsWindow(hwnd): 
+                            if w.get("status") != "Offline":
+                                w["status"] = "Offline"
+                                needs_refresh = True
+                            continue
 
-            with self.status_lock:
-                self.worker_status_cache = new_worker_times
+                        # 3. Capture buffer (Try Cache -> Re-walk)
+                        content = None
+                        cache_key = (hwnd, rid)
+                        cached_node = self._node_cache.get(cache_key)
+                        
+                        hit = False
+                        if cached_node:
+                            try:
+                                content = self.terminal.get_text_from_element(cached_node)
+                                if content:
+                                    hit = True
+                                else:
+                                    del self._node_cache[cache_key]
+                            except:
+                                del self._node_cache[cache_key]
 
-            if needs_refresh and self.on_update_callback:
-                self.on_update_callback()
+                        if not content:
+                            # Full re-walk capture
+                            content, new_node = self.terminal.get_buffer_text(
+                                hwnd=hwnd, 
+                                title=w["terminal"], 
+                                runtime_id=rid,
+                                return_element=True
+                            )
+                            if new_node:
+                                self._node_cache[cache_key] = new_node
 
-            ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
-            time.sleep(ms / 1000.0)
+                        # Update stats
+                        w["is_cached"] = hit
+                        w["hits"] = w.get("hits", 0) + (1 if hit else 0)
+                        w["walks"] = w.get("walks", 0) + (1 if not hit else 0)
+
+                        if content:
+                            w["last_buffer"] = content
+                            if w.get("status") != "Online":
+                                w["status"] = "Online"
+                                needs_refresh = True
+                            
+                            if self.on_buffer_callback:
+                                self.on_buffer_callback(hwnd, content)
+                        else:
+                            if w.get("status") != "Offline":
+                                w["status"] = "Offline"
+                                needs_refresh = True
+                    except Exception as e:
+                        print(f"[WorkerManager Sync Error] {e}")
+                        # Ensure we don't break list indexing on error
+                        if len(new_worker_times) < (current_workers.index(w) + 1):
+                            new_worker_times.append("Error")
+
+                with self.status_lock:
+                    self.worker_status_cache = new_worker_times
+
+                if needs_refresh and self.on_update_callback:
+                    self.on_update_callback()
+
+                ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
+                time.sleep(ms / 1000.0)
 
