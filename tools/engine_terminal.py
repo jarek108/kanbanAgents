@@ -120,6 +120,63 @@ class TerminalEngine:
         except:
             return None
 
+    def capture_with_switch(self, hwnd, title, runtime_id):
+        """If UIA cannot see the buffer because the tab is inactive, we briefly switch to it."""
+        try:
+            root = auto.ControlFromHandle(hwnd)
+            if not root: return None
+            
+            # Find the tab item
+            target_tab = None
+            current_active_tab = None
+            
+            id_tuple = tuple(map(int, runtime_id.split(','))) if runtime_id else None
+
+            for child, depth in auto.WalkControl(root, maxDepth=12):
+                if "TabItem" in child.ControlTypeName or child.ControlTypeName == "ListItemControl":
+                    try:
+                        sel_pat = child.GetSelectionItemPattern()
+                        if sel_pat:
+                            if sel_pat.IsSelected:
+                                current_active_tab = child
+                            
+                            # Match by RID or Title
+                            match = False
+                            if id_tuple and tuple(child.GetRuntimeId()) == id_tuple:
+                                match = True
+                            elif title and child.Name == title:
+                                match = True
+                            
+                            if match:
+                                target_tab = child
+                    except: pass
+            
+            if not target_tab:
+                return self.get_buffer_text(hwnd, title, runtime_id)
+
+            # If already active, just get it
+            try:
+                if target_tab.GetSelectionItemPattern().IsSelected:
+                    return self.get_buffer_text(hwnd, title, runtime_id)
+            except: pass
+
+            # SWITCH
+            try:
+                # Save current mouse pos? No, just use Select()
+                target_tab.GetSelectionItemPattern().Select()
+                time.sleep(0.1) # Give terminal a moment to swap buffers
+                content = self.get_buffer_text(hwnd, title, runtime_id)
+                
+                # Restore previous tab
+                if current_active_tab:
+                    current_active_tab.GetSelectionItemPattern().Select()
+                
+                return content
+            except:
+                return None
+        except:
+            return None
+
     def get_text_from_element(self, element):
         """Extracts text from a cached UIA element."""
         try:
@@ -149,22 +206,67 @@ class TerminalEngine:
                     if tuple(root.GetRuntimeId()) == id_tuple:
                         target_element = root
                     else:
-                        target_element = auto.Control(searchDepth=5, RuntimeId=id_tuple)
+                        # Search within this window only
+                        for child, depth in auto.WalkControl(root, maxDepth=12):
+                            if tuple(child.GetRuntimeId()) == id_tuple:
+                                target_element = child
+                                break
 
             # 2. Fallback to Name
             if not target_element and target_title:
-                target_element = auto.Control(searchDepth=5, Name=target_title)
+                # Use window root to search by name too
+                root = auto.ControlFromHandle(target_hwnd)
+                if root:
+                    for child, depth in auto.WalkControl(root, maxDepth=12):
+                        if child.Name == target_title:
+                            target_element = child
+                            break
 
             if not target_element: return (None, None) if return_element else None
 
-            # Find text pattern using WalkControl
-            for child, depth in auto.WalkControl(target_element, maxDepth=12):
-                if child.ControlTypeName in ["PaneControl", "DocumentControl", "EditControl"]:
+            # Verify if it's a tab and if it's currently selected
+            if "TabItem" in target_element.ControlTypeName or target_element.ControlTypeName == "ListItemControl":
+                try:
+                    sel_pattern = target_element.GetSelectionItemPattern()
+                    if sel_pattern:
+                        if not sel_pattern.IsSelected:
+                            return (None, target_element) if return_element else None
+                except:
+                    pass
+
+            # Find text pattern
+            # Strategy: Even if we targeted a specific tab, the text pane might be 
+            # a sibling elsewhere in the window. We search the root of the window.
+            root = auto.ControlFromHandle(target_hwnd)
+            if not root: return (None, None) if return_element else None
+
+            # Search the whole window for the active text area
+            # (Modern terminals usually only expose the active tab's text pane)
+            best_text = None
+            best_element = None
+
+            for child, depth in auto.WalkControl(root, maxDepth=12):
+                if child.ControlTypeName in ["PaneControl", "DocumentControl", "EditControl", "TextControl"]:
                     text = self.get_text_from_element(child)
-                    if text and len(text.strip()) > 5:
-                        return (text, child) if return_element else text
+                    if text is not None and len(text.strip()) > 0:
+                        # Skip if it's just the tab title (heuristic to avoid labels)
+                        if target_title and text.strip() == target_title and len(text) < 100:
+                            continue
+                        
+                        # Document/Edit controls are high-confidence terminal buffers
+                        if child.ControlTypeName in ["DocumentControl", "EditControl"]:
+                            return (text, child) if return_element else text
+                        
+                        # For others (like TextControl or PaneControl), keep the one with most text
+                        if best_text is None or len(text) > len(best_text):
+                            best_text = text
+                            best_element = child
             
-            return (None, None) if return_element else None
+            if best_text is not None:
+                return (best_text, best_element) if return_element else best_text
+
+            # Fallback: if no text pane found, return the target element itself
+            return (None, target_element) if return_element else None
         except Exception as e:
             return (None, None) if return_element else None
 

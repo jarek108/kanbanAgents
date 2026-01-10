@@ -83,6 +83,7 @@ class WorkerManager:
                         
                         hwnd = w.get("hwnd")
                         rid = w.get("runtime_id")
+                        
                         if not hwnd or not win32gui.IsWindow(hwnd): 
                             if w.get("status") != "Offline":
                                 w["status"] = "Offline"
@@ -98,15 +99,37 @@ class WorkerManager:
                         if cached_node:
                             try:
                                 content = self.terminal.get_text_from_element(cached_node)
-                                if content:
+                                if content is not None:
                                     hit = True
                                 else:
                                     del self._node_cache[cache_key]
                             except:
                                 del self._node_cache[cache_key]
 
-                        if not content:
-                            # Full re-walk capture
+                        if content is None:
+                            # If it's a tab and not selected, get_buffer_text returned None.
+                            # We can try capture_with_switch if enough time has passed.
+                            now = time.time()
+                            last_switch = w.get("last_switch_time", 0)
+                            
+                            # Only switch if it's been at least 5 seconds since last switch
+                            if now - last_switch > 5:
+                                content = self.terminal.capture_with_switch(
+                                    hwnd=hwnd,
+                                    title=w["terminal"],
+                                    runtime_id=rid
+                                )
+                                w["last_switch_time"] = now
+                                if content:
+                                    # We don't want to cache the node if we had to switch,
+                                    # because the buffer element might be volatile.
+                                    pass
+                            else:
+                                # Use last buffer if available to avoid flicker/status change
+                                content = w.get("last_buffer")
+
+                        if content is None:
+                            # Full re-walk capture (fallback/initial)
                             content, new_node = self.terminal.get_buffer_text(
                                 hwnd=hwnd, 
                                 title=w["terminal"], 
@@ -121,7 +144,7 @@ class WorkerManager:
                         w["hits"] = w.get("hits", 0) + (1 if hit else 0)
                         w["walks"] = w.get("walks", 0) + (1 if not hit else 0)
 
-                        if content:
+                        if content is not None:
                             w["last_buffer"] = content
                             if w.get("status") != "Online":
                                 w["status"] = "Online"
@@ -130,12 +153,13 @@ class WorkerManager:
                             if self.on_buffer_callback:
                                 self.on_buffer_callback(hwnd, content)
                         else:
-                            if w.get("status") != "Offline":
-                                w["status"] = "Offline"
-                                needs_refresh = True
+                            # Only mark offline if the window is gone or terminal.get_buffer_text returned None for element too
+                            if not win32gui.IsWindow(hwnd):
+                                if w.get("status") != "Offline":
+                                    w["status"] = "Offline"
+                                    needs_refresh = True
                     except Exception as e:
                         print(f"[WorkerManager Sync Error] {e}")
-                        # Ensure we don't break list indexing on error
                         if len(new_worker_times) < (current_workers.index(w) + 1):
                             new_worker_times.append("Error")
 
@@ -147,4 +171,5 @@ class WorkerManager:
 
                 ms = self.full_config.get("terminal", {}).get('sync_interval_ms', 1000)
                 time.sleep(ms / 1000.0)
+
 
