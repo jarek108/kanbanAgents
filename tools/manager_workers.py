@@ -154,26 +154,57 @@ class WorkerManager:
                         # PRIORITY 2: Log File (Background)
                         log_path = w.get("log_path")
                         if content is None and log_path and os.path.exists(log_path):
-                            for enc in ['utf-8', 'utf-16', 'utf-16-le', 'cp1252']:
-                                try:
-                                    with open(log_path, 'r', encoding=enc, errors='ignore') as f:
-                                        raw_content = f.read()
-                                    if raw_content:
-                                        content = raw_content.strip()
-                                        hit = True
-                                        break
-                                except: continue
+                            try:
+                                with open(log_path, 'rb') as f:
+                                    # Seek to the end and read only the tail
+                                    f.seek(0, os.SEEK_END)
+                                    size = f.tell()
+                                    max_tail = 10000 # Roughly 100-200 lines
+                                    offset = max(0, size - max_tail)
+                                    f.seek(offset)
+                                    raw_bytes = f.read()
+                                    
+                                # Decode bytes using multiple possible encodings
+                                raw_content = None
+                                for enc in ['utf-8', 'utf-16', 'utf-16-le', 'cp1252']:
+                                    try:
+                                        raw_content = raw_bytes.decode(enc, errors='ignore')
+                                        if raw_content: break
+                                    except: continue
+                                            
+                                if raw_content:
+                                    # Aggressive Filtering: Remove transcript headers and footers
+                                    lines = raw_content.splitlines()
+                                    clean_lines = []
+                                    skip_keywords = ["**********************", "Windows PowerShell transcript", "Username:", "RunAs User:", "Configuration Name:", "Machine:", "Host Application:", "Process ID:", "PSVersion:", "PSEdition:", "OS:", "CLRVersion:", "BuildVersion:", "Start time:", "End time:", "Transcript started, output file is"]
+                                    
+                                    for line in lines:
+                                        if not any(k in line for k in skip_keywords):
+                                            clean_lines.append(line)
+                                    
+                                    # Viewport Emulation: Take the last 60 lines
+                                    viewport_lines = clean_lines[-60:]
+                                    content = "\n".join(viewport_lines).strip()
+                                    hit = True
+                            except Exception as e:
+                                print(f"[WorkerManager Log Tail Error] {e}")
 
-                        # Check for PROMOTION (Independent of active status)
+                        # Check for PROMOTION (ONLY if Active to prevent cross-talk)
                         if not log_path and hwnd and win32gui.IsWindow(hwnd):
-                            # Only promote if we haven't started promoting yet
-                            if not w.get("is_promoting"):
-                                w["is_promoting"] = True
-                                new_log = os.path.join(os.environ.get('TEMP', '.'), f"promoted_{int(time.time())}_{w['terminal']}.log")
-                                w["log_path"] = new_log
-                                cmd = f'Start-Transcript -Path "{new_log}" -Append; Clear-Host'
-                                self.terminal.send_command(cmd)
-                                print(f"[WorkerManager] Promoting {w['terminal']} to logging tier...")
+                            # Safety: Only promote if this specific worker is CURRENTLY active in the terminal
+                            if is_active:
+                                # Only promote if we haven't started promoting yet
+                                if not w.get("is_promoting"):
+                                    w["is_promoting"] = True
+                                    new_log = os.path.join(os.environ.get('TEMP', '.'), f"promoted_{int(time.time())}_{w['terminal']}.log")
+                                    w["log_path"] = new_log
+                                    cmd = f'Start-Transcript -Path "{new_log}" -Append; Clear-Host'
+                                    self.terminal.send_command(cmd)
+                                    print(f"[WorkerManager] Promoting {w['terminal']} to logging tier...")
+                            else:
+                                # If not active, we cannot safely inject keystrokes.
+                                # The fallback UIA/switch logic will handle it until the user clicks the tab.
+                                pass
 
                         if content is None:
                             if not hwnd or not win32gui.IsWindow(hwnd):

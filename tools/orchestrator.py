@@ -204,6 +204,10 @@ class OrchestratorUI:
         btn_kill.pack(fill=tk.X, pady=2)
         utils_ui.ToolTip(btn_kill, "Terminate the process and remove from monitoring.")
 
+        btn_kill_all = ttk.Button(worker_btns, text="Kill All", command=self.kill_all_workers)
+        btn_kill_all.pack(fill=tk.X, pady=2)
+        utils_ui.ToolTip(btn_kill_all, "Terminate ALL worker processes and clear the list.")
+
         btn_connect = ttk.Button(worker_btns, text="Connect", command=lambda: orchestrator_popups.open_connect_worker_popup(self))
         btn_connect.pack(fill=tk.X, pady=2)
         utils_ui.ToolTip(btn_connect, "Add an existing terminal window to the monitoring list.")
@@ -265,9 +269,22 @@ class OrchestratorUI:
         
         self.terminal_display = scrolledtext.ScrolledText(
             self.display_frame, state='disabled', bg="#000000", fg="#d4d4d4", font=("Consolas", 10),
-            padx=10, pady=10, borderwidth=0, highlightthickness=0
+            padx=10, pady=10, borderwidth=0, highlightthickness=0,
+            insertofftime=0, # Hide cursor
+            selectbackground="#444444", inactiveselectbackground="#333333"
         )
         self.terminal_display.pack(fill=tk.BOTH, expand=True)
+        # Bind Ctrl+C to copy
+        self.terminal_display.bind("<Control-c>", self.copy_mirror_selection)
+
+    def copy_mirror_selection(self, event=None):
+        try:
+            content = self.terminal_display.get(tk.SEL_FIRST, tk.SEL_LAST)
+            self.root.clipboard_clear()
+            self.root.clipboard_append(content)
+        except tk.TclError:
+            pass # No selection
+        return "break" # Prevent default
 
     def kill_selected_worker(self):
         sel = self.worker_tree.selection()
@@ -292,6 +309,20 @@ class OrchestratorUI:
         if confirmed:
             self.workers_mgr.remove_worker(item_idx)
             self.refresh_worker_table()
+
+    def kill_all_workers(self):
+        workers, _ = self.workers_mgr.get_workers()
+        if not workers: return
+        
+        if messagebox.askyesno("Kill All", f"Are you sure you want to terminate ALL {len(workers)} worker processes?"):
+            # Work backwards from the end of the list to safely remove items
+            for i in range(len(workers) - 1, -1, -1):
+                w = workers[i]
+                if w.get('pid'):
+                    engine_projects.kill_process(w['pid'])
+                self.workers_mgr.remove_worker(i)
+            self.refresh_worker_table()
+            messagebox.showinfo("Success", "All worker processes terminated.")
 
     def remove_selected_worker(self):
         sel = self.worker_tree.selection()
@@ -480,8 +511,29 @@ class OrchestratorUI:
 
 
     def update_display(self, content):
-        self.terminal_display.config(state='normal'); self.terminal_display.delete('1.0', tk.END)
-        self.terminal_display.insert(tk.END, content); self.terminal_display.see(tk.END); self.terminal_display.config(state='disabled')
+        # Optimization: only update if different
+        current = self.terminal_display.get("1.0", tk.END).strip()
+        if content.strip() == current:
+            return
+
+        # Try to preserve selection
+        try:
+            sel_range = (self.terminal_display.index(tk.SEL_FIRST), self.terminal_display.index(tk.SEL_LAST))
+        except tk.TclError:
+            sel_range = None
+
+        self.terminal_display.config(state='normal')
+        self.terminal_display.delete('1.0', tk.END)
+        self.terminal_display.insert(tk.END, content)
+        
+        if sel_range:
+            try:
+                self.terminal_display.tag_add(tk.SEL, sel_range[0], sel_range[1])
+            except: pass
+        else:
+            self.terminal_display.see(tk.END)
+            
+        self.terminal_display.config(state='disabled')
 
     def send_command(self, event=None):
         cmd = self.cmd_entry.get()
