@@ -20,6 +20,11 @@ Real-time monitoring of project changes.
 - **Highlights**: Highlights tasks assigned to the monitored user (default `Manager`) in GREEN.
 - **Sorting**: Lists user-assigned tasks first on startup.
 
+### `orchestrator_pty.py` (New)
+Full internal hosting Orchestrator using Windows ConPTY.
+- **Features**: No dependency on external windows; zero UI flickering; robust background monitoring.
+- **Usage**: `python tools/orchestrator_pty.py`
+
 ## Usage Examples
 
 ```bash
