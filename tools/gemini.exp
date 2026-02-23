@@ -1,0 +1,19 @@
+#!/usr/bin/expect
+
+set timeout -1
+
+# Spawn your CLI app
+spawn gemini -y
+
+interact {
+    -o -re "(?i)keep trying" {
+        # Brackets removed entirely to prevent ANY chance of Tcl execution
+        send_user "\n*** Auto-Reply: Saw 'keep trying', sending 1... ***\n"
+        
+        # Send the option
+        send "1\r"
+        
+        # Pause to prevent spamming the input while the UI redraws
+        sleep 0.5
+    }
+}
