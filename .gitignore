@@ -36,3 +36,6 @@ Thumbs.db
 
 # Project Config
 tools/orchestrator_config.json
+
+artifacts/
+.perplexity_session/

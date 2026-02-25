@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini CLI Log Renderer</title>
+    <style>
+        :root {
+            --bg: #0c0c0c;
+            --fg: #cccccc;
+            --black: #0c0c0c; --red: #c50f1f; --green: #13a10e; --yellow: #c19c00;
+            --blue: #0037da; --magenta: #881798; --cyan: #3a96dd; --white: #cccccc;
+            --bright-black: #767676; --bright-red: #e74856; --bright-green: #16c60c; --bright-yellow: #f9f1a5;
+            --bright-blue: #3b78ff; --bright-magenta: #b4009e; --bright-cyan: #61d6d6; --bright-white: #f2f2f2;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--fg);
+            font-family: 'Cascadia Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+            margin: 0;
+            padding: 10px;
+            overflow-x: hidden;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        #terminal {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            padding-bottom: 50px;
+        }
+        .ansi-black { color: var(--black); } .ansi-red { color: var(--red); }
+        .ansi-green { color: var(--green); } .ansi-yellow { color: var(--yellow); }
+        .ansi-blue { color: var(--blue); } .ansi-magenta { color: var(--magenta); }
+        .ansi-cyan { color: var(--cyan); } .ansi-white { color: var(--white); }
+        .ansi-bright-black { color: var(--bright-black); } .ansi-bright-red { color: var(--bright-red); }
+        .ansi-bright-green { color: var(--bright-green); } .ansi-bright-yellow { color: var(--bright-yellow); }
+        .ansi-bright-blue { color: var(--bright-blue); } .ansi-bright-magenta { color: var(--bright-magenta); }
+        .ansi-bright-cyan { color: var(--bright-cyan); } .ansi-bright-white { color: var(--bright-white); }
+        .ansi-bold { font-weight: bold; }
+        .ansi-bg-black { background-color: var(--black); }
+        #status {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            background: #222;
+            padding: 2px 10px;
+            font-size: 10px;
+            color: #888;
+            border-top-left-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    <div id="status">Connecting...</div>
+
+    <script>
+        const term = document.getElementById('terminal');
+        const status = document.getElementById('status');
+        let lastSize = 0;
+
+        function ansiToHtml(text) {
+            const colors = [
+                'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'
+            ];
+            
+            // Escape HTML
+            let html = text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            // Handle ANSI sequences
+            const stack = [];
+            
+            // Remove unsupported sequences like CSI n K (Clear line) or CSI n J (Clear screen)
+            html = html.replace(/\x1b\[[0-9;]*[KJKHJAB]/g, '');
+
+            // Process SGR codes (m)
+            html = html.replace(/\x1b\[([\d;]*)m/g, (match, code) => {
+                if (!code || code === '0' || code === '00') {
+                    const res = stack.map(() => '</span>').join('');
+                    stack.length = 0;
+                    return res;
+                }
+                
+                const parts = code.split(';');
+                let result = '';
+                for (let i = 0; i < parts.length; i++) {
+                    const c = parseInt(parts[i]);
+                    if (c === 1) { result += '<span class="ansi-bold">'; stack.push('bold'); }
+                    else if (c >= 30 && c <= 37) { result += `<span class="ansi-${colors[c - 30]}">`; stack.push('color'); }
+                    else if (c >= 90 && c <= 97) { result += `<span class="ansi-bright-${colors[c - 90]}">`; stack.push('color'); }
+                    else if (c >= 40 && c <= 47) { result += `<span class="ansi-bg-${colors[c - 40]}">`; stack.push('bg'); }
+                    else if (c === 39) { /* default fg - just close color */ }
+                    else if (c === 49) { /* default bg - just close bg */ }
+                }
+                return result;
+            });
+
+            return html + stack.map(() => '</span>').join('');
+        }
+
+        async function updateLogs() {
+            try {
+                // Try test.log first, then gemini_session_log/gemini_session.log
+                let response = await fetch('test.log', { cache: 'no-store' });
+                if (!response.ok) {
+                    response = await fetch('gemini_session_log/gemini_session.log', { cache: 'no-store' });
+                }
+                
+                if (!response.ok) {
+                    status.innerText = "Log file not found";
+                    return;
+                }
+
+                const text = await response.text();
+                if (text.length !== lastSize) {
+                    const isAtBottom = (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50;
+                    
+                    term.innerHTML = ansiToHtml(text);
+                    lastSize = text.length;
+                    status.innerText = `Last updated: ${new Date().toLocaleTimeString()} (${text.length} bytes)`;
+                    
+                    if (isAtBottom) {
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }
+                }
+            } catch (e) {
+                status.innerText = "Error fetching logs: " + e.message;
+            }
+        }
+
+        setInterval(updateLogs, 1000);
+        updateLogs();
+    </script>
+</body>
+</html>
