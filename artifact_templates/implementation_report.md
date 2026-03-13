@@ -1,7 +1,6 @@
 # Metadata
 - ID: IRP-XXXX
-- Outcome: ready | needs info | blocked
-- Recepient: QA-ID | Manager
+- Recepient: QA
 - Parent Request: IRQ-YYYY
 - Implementing Actor: Coder-ID
 - Implementation Round: 1..N
@@ -12,6 +11,8 @@
 - Base Commit: Start Hash for this round of implementation
 - Original Base Commit: Starting hash from the Implementation Request
 - Feature Branch: branch-name
+
+Outcome: ready | escalation needed
 
 # Sumary
 ## Context

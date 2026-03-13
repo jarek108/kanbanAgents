@@ -1,8 +1,9 @@
 # Metadata
 ID: IRQ-XXXX  
-Recepient: Coder-ID  
+Recepient: Coder
 Repo: repo-name
 Base Commit: Hash of commit agent *starts work on*, or `TBD` if not branched yet.
+Feature Branch: branch-name
 
 # Summary
 1–2 sentences describing the task’s purpose and expected outcome.  
@@ -21,7 +22,7 @@ Component interactions.
 What outcome is expected and why it matters in broader context.  
 List 2–5 concrete goals (e.g., correctness, performance threshold, compatibility, maintainability)
 
-# Non-goals
+# Non-goals (functional narrowing)
 Explicitly limited scope to prevent “helpful” extra work.  
 Call out adjacent improvements that are intentionally deferred (even if tempting).
 
@@ -29,14 +30,14 @@ Call out adjacent improvements that are intentionally deferred (even if tempting
 Existing tests are passing
 Code refactored and cleaned up, old code removed
 Documentation updated to reflect changes
-Visua inspection confirms changes are as expected
+Visual inspection confirms changes are as expected
 
 # Implementation Guidance
 High-level direction (desired shape, not step-by-step instructions).  
 Preferred approaches/algorithms and what to avoid if relevant.  
 Components to reuse/extend, and expected quality signals (tests, logging, readability).
 
-# Constraints, Assumptions, 'Why nots'
+# Constraints, Assumptions, 'Why nots' (arch narrowing)
 System preconditions.  
 Performance/security limits.  
 Explicit “why not X” decisions already made (with brief rationale)

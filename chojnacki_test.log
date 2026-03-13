@@ -1,0 +1,19 @@
+input
+1. prompt - file
+2. branch / checkpoint
+3. folder path
+4. project repo (http)
+
+
+- dostaje te 3 rzeczy, mozliwe ze folder juz istnieje, wiec wtedy nie trzeb go tworzyc, wiec moze juz tez tam jest to repo, generalnie duzo przypadkow
+pull repo jezeli nie istnieje w tym folderze jeszcze (project repo moga mi, jezeli nie istnieje branch to generlanie napierdalasz to repo
+ 
+- skrypt do przygotowania repo to jest to co opisane na gorze
+
+nastepnie dajesz mu prompt z input i ogien (single shot)
+
+
+next step to jest kwestia monitorowania - to znaczy (dead, finished, stuck) - co w prosty sposob mozemy sprawdzic
+kazdy z nich moze miec wiele poziomow, trzeba sie zastanaowic jaki jest insight z tego ktory trzeba przerobic
+
+success - to finalnie jest commit z implmentation report - jezeli go nie ma to mozemy dopytac czy agent juz skonczyl
