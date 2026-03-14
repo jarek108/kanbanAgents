@@ -1,4 +1,18 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "name": "ensure-vibe-kanban",
+            "type": "command",
+            "command": "cmd.exe /c start_board.bat"
+          }
+        ]
+      }
+    ]
+  },
   "mcpServers": {
     "vibe-kanban": {
       "command": "node",
