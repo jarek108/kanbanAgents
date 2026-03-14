@@ -46,17 +46,27 @@ if %ERRORLEVEL% neq 0 (
     if %ERRORLEVEL% neq 0 (
         echo.
         echo =====================================================
-        echo ERROR: Microsoft C++ Build Tools not found.
-        echo Rust requires the MSVC linker to compile the backend.
-        echo.
-        echo Please install the Build Tools manually:
-        echo 1. Download: https://aka.ms/vs/17/release/vs_BuildTools.exe
-        echo 2. Run it and select "Desktop development with C++"
-        echo 3. Restart your terminal and run this script again.
+        echo Microsoft C++ Build Tools not found.
+        echo Downloading and installing MSVC Build Tools automatically...
+        echo This may take a few minutes and require Administrator privileges.
         echo =====================================================
         echo.
-        pause
-        exit /b 1
+        
+        :: Download vs_buildtools
+        powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vs_BuildTools.exe' -OutFile '%TEMP%\vs_BuildTools.exe'"
+        
+        :: Install silently with necessary components for Rust
+        echo Running Visual Studio Installer...
+        start /wait "" "%TEMP%\vs_BuildTools.exe" --quiet --wait --norestart --nocache ^
+            --add Microsoft.VisualStudio.Workload.VCTools ^
+            --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 ^
+            --add Microsoft.VisualStudio.Component.Windows11SDK.10.0.22621
+            
+        :: Clean up installer
+        del "%TEMP%\vs_BuildTools.exe"
+        
+        echo Build Tools installed. 
+        echo IMPORTANT: You may need to restart your terminal/computer for PATH changes to take effect.
     )
 )
 
