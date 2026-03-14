@@ -36,11 +36,19 @@ class Pipeline:
         repo_url = metadata['repo']
         repo_name = repo_url.split("/")[-1].replace(".git", "")
         
+        # Determine report template path
+        report_template = Path("artifact_templates/implementation_report.md")
+        if not report_template.exists():
+             # Try absolute path if relative fails (for different execution contexts)
+             report_template = Path(__file__).parent.parent / "artifact_templates" / "implementation_report.md"
+
         self.bus.emit(RequestWorkspace(
             request_id=metadata['id'],
             recipient=metadata['recipient'],
             repo_name=repo_name,
-            base_workdir=self.base_workdir
+            base_workdir=self.base_workdir,
+            source_path=event.path,
+            report_template_path=report_template if report_template.exists() else None
         ))
 
     def on_workspace_ready(self, event: WorkspaceReady):
@@ -66,46 +74,66 @@ class Pipeline:
         metadata = self._current_task['metadata']
         source_path = self._current_task['source_path']
         
-        # Request Injection & Initial Commit (moved from main.py logic)
+        # Request Injection & Initial Commit
         repo_name = metadata['repo'].split("/")[-1].replace(".git", "")
         request_id = metadata['id']
-        target_request_path = workspace_path / source_path.name
+        target_request_path = workspace_path / "implementation_request.md"
+        target_report_path = workspace_path / "implementation_report.md"
         
         numeric_match = re.search(r'(\d+)$', request_id)
         numeric_id = numeric_match.group(1).zfill(4) if numeric_match else "0000"
-        commit_msg = f"[implementation request]: {repo_name}-{numeric_id}"
+        commit_msg = f"[implementation bootstrap]: {repo_name}-{numeric_id}"
 
-        # Check if bootstrap commit exists
+        # Check if bootstrap commit exists (by message prefix)
+        print(f"Pipeline: Checking for bootstrap commit starting with '[implementation bootstrap]: {repo_name}-{numeric_id}'...")
         log_check = subprocess.run(
-            ['git', 'log', '--grep', f"\\[implementation request\\]: {repo_name}-{numeric_id}"], 
+            ['git', 'log', '--grep', f"\\[implementation bootstrap\\]: {repo_name}-{numeric_id}"], 
             cwd=workspace_path, capture_output=True, text=True
         )
         
-        if commit_msg not in log_check.stdout:
+        if f"[implementation bootstrap]: {repo_name}-{numeric_id}" not in log_check.stdout:
+            print(f"Pipeline: Bootstrap commit not found. Injecting request and report template...")
+            # We copy here too as a fail-safe if WorkspaceHandler was bypassed or for existing workspaces
             shutil.copy2(source_path, target_request_path)
+            
+            report_template = Path("artifact_templates/implementation_report.md")
+            if not report_template.exists():
+                report_template = Path(__file__).parent.parent / "artifact_templates" / "implementation_report.md"
+            if report_template.exists():
+                shutil.copy2(report_template, target_report_path)
+
             self.bus.emit(RequestCommit(
                 workspace_path=workspace_path,
-                request_file=target_request_path,
+                request_file=target_request_path, # Legacy field, GitHandler now adds all
                 commit_message=commit_msg
             ))
             self._current_task['bootstrap_skipped'] = False
         else:
-            print(f"Bootstrap commit '{commit_msg}' already exists. Skipping injection.")
+            print(f"Pipeline: Bootstrap commit already exists. Skipping injection.")
             self._current_task['bootstrap_skipped'] = True
         
         # Now trigger the agent
-        self.bus.emit(StartCoding(context=metadata))
+        print(f"Pipeline: Starting coding phase for task {request_id}...")
+        self.bus.emit(StartCoding(
+            workspace_path=workspace_path,
+            context=metadata
+        ))
 
     def on_work_completed(self, event: WorkCompleted):
         print("Work completed by agent.")
+        
+        if event.diff == "FAILED_NO_DONE_COMMIT":
+            print("Agent failed (no DONE commit). Skipping post-work steps.")
+            return
+
         if self.push_on_finish:
-            if not self._current_task.get('bootstrap_skipped', False):
-                metadata = self._current_task['metadata']
-                self.bus.emit(RequestPush(
-                    workspace_path=self._current_task['workspace_path'],
-                    feature_branch=metadata['feature_branch']
-                ))
-            else:
-                print("Skipping push because bootstrap commit was already present.")
+            # We ALWAYS push at the end of a successful run to ensure 
+            # all agent commits are on remote, even if bootstrap was skipped.
+            metadata = self._current_task['metadata']
+            print(f"Pipeline: Requesting final push for branch {metadata['feature_branch']}...")
+            self.bus.emit(RequestPush(
+                workspace_path=self._current_task['workspace_path'],
+                feature_branch=metadata['feature_branch']
+            ))
         
         print(f"Pipeline finished for task {self._current_task['metadata']['id']}")

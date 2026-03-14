@@ -18,6 +18,8 @@ class RequestWorkspace(Event):
     recipient: str
     repo_name: str
     base_workdir: Path
+    source_path: Optional[Path] = None
+    report_template_path: Optional[Path] = None
 
 @dataclass
 class RequestGitClone(Event):
@@ -43,6 +45,7 @@ class RequestCommit(Event):
 
 @dataclass
 class StartCoding(Event):
+    workspace_path: Path
     context: Dict[str, Any]
 
 # Signals (Handlers -> Pipeline)

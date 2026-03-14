@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from bus import EventBus
 from events import RequestWorkspace, WorkspaceReady
@@ -17,4 +18,16 @@ class WorkspaceHandler:
             workspace_path.mkdir(parents=True, exist_ok=True)
             print(f"Created new workspace: {workspace_path}")
             
+        # Unconditionally copy the request file if provided
+        if event.source_path:
+            target_path = workspace_path / "implementation_request.md"
+            print(f"WorkspaceHandler: Copying {event.source_path} to {target_path}")
+            shutil.copy2(event.source_path, target_path)
+
+        # Copy the report template if provided
+        if event.report_template_path:
+            target_path = workspace_path / "implementation_report.md"
+            print(f"WorkspaceHandler: Copying {event.report_template_path} to {target_path}")
+            shutil.copy2(event.report_template_path, target_path)
+
         self.bus.emit(WorkspaceReady(path=workspace_path))
