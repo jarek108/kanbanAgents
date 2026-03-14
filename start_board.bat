@@ -38,7 +38,29 @@ if %ERRORLEVEL% neq 0 (
     set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 )
 
-:: 3. Check for cargo-watch
+:: 3. Check for MSVC Build Tools (link.exe) which Rust needs on Windows
+where cl.exe >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    :: Try to find it via vswhere if it's installed but not in PATH
+    "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath >nul 2>nul
+    if %ERRORLEVEL% neq 0 (
+        echo.
+        echo =====================================================
+        echo ERROR: Microsoft C++ Build Tools not found.
+        echo Rust requires the MSVC linker to compile the backend.
+        echo.
+        echo Please install the Build Tools manually:
+        echo 1. Download: https://aka.ms/vs/17/release/vs_BuildTools.exe
+        echo 2. Run it and select "Desktop development with C++"
+        echo 3. Restart your terminal and run this script again.
+        echo =====================================================
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
+:: 4. Check for cargo-watch
 cargo watch --version >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo cargo-watch not found. Installing via cargo...
