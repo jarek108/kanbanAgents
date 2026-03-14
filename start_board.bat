@@ -32,5 +32,5 @@ cd ..
 echo Starting dev server...
 set HOST=127.0.0.1
 set PORT=61154
-call pnpm run dev
+call pnpm run dev:win
 endlocal
