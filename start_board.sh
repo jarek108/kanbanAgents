@@ -2,6 +2,11 @@
 set -e
 echo "Starting Vibe Kanban Web UI on 127.0.0.1:61154 from local fork..."
 
+if ! command -v pnpm &> /dev/null; then
+    echo "pnpm not found. Installing pnpm globally..."
+    npm install -g pnpm
+fi
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FORK_DIR="$DIR/../vibe-kanban"
 
