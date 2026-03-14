@@ -33,9 +33,9 @@ if %ERRORLEVEL% neq 0 (
     :: Clean up installer
     del "%TEMP%\rustup-init.exe"
     
-    :: Reload environment variables so 'cargo' is immediately available
-    echo Reloading environment variables...
-    call "%USERPROFILE%\.cargo\env.bat" 2>nul || echo Please restart your terminal if the script fails in the next step.
+    :: Manually add cargo to the current session's PATH
+    echo Injecting Cargo into current PATH...
+    set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 )
 
 :: 3. Check for cargo-watch
