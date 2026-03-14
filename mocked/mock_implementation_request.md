@@ -3,7 +3,7 @@ ID: IRQ-TEST-001
 Recipient: Coder0
 Repo: https://github.com/jarek108/testRepo
 Base Commit: 800dae7162d3b9d68ae9b109fb7a00209697f515
-Feature Branch: feat/0x0003-0-hackathon-server
+Feature Branch: feat/0x0001-0-automation
 
 # Summary
 Implement a simple standalone HTTP server that responds with "hello from hacathon" to verify the development environment.
