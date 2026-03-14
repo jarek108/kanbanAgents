@@ -66,7 +66,17 @@ if %ERRORLEVEL% neq 0 (
         del "%TEMP%\vs_BuildTools.exe"
         
         echo Build Tools installed. 
-        echo IMPORTANT: You may need to restart your terminal/computer for PATH changes to take effect.
+    )
+    
+    :: Now explicitly load the Visual Studio Command Prompt environment
+    for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+        set "VS_PATH=%%i"
+    )
+    if defined VS_PATH (
+        if exist "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat" (
+            echo Loading Visual C++ Environment...
+            call "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat"
+        )
     )
 )
 
