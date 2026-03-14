@@ -9,6 +9,7 @@ def extract_metadata(file_path: Path) -> Dict[str, str]:
     metadata = {}
     patterns = {
         'id': r'ID:\s*(IRQ-[\w-]+)',
+        'recipient': r'Rec[ei]pient:\s*([\w\-]+)',
         'repo': r'Repo:\s*([\w\-\./:]+)',
         'base_commit': r'Base Commit:\s*([a-f0-9]+|TBD)',
         'feature_branch': r'Feature Branch:\s*([\w\-/]+)'
