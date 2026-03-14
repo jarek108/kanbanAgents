@@ -38,44 +38,47 @@ if %ERRORLEVEL% neq 0 (
     set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 )
 
-:: 3. Check for MSVC Build Tools (link.exe) which Rust needs on Windows
-where cl.exe >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    :: Try to find it via vswhere if it's installed but not in PATH
-    "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath >nul 2>nul
-    if %ERRORLEVEL% neq 0 (
-        echo.
-        echo =====================================================
-        echo Microsoft C++ Build Tools not found.
-        echo Downloading and installing MSVC Build Tools automatically...
-        echo This may take a few minutes and require Administrator privileges.
-        echo =====================================================
-        echo.
-        
-        :: Download vs_buildtools
-        powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vs_BuildTools.exe' -OutFile '%TEMP%\vs_BuildTools.exe'"
-        
-        :: Install silently with necessary components for Rust
-        echo Running Visual Studio Installer...
-        start /wait "" "%TEMP%\vs_BuildTools.exe" --quiet --wait --norestart --nocache ^
-            --add Microsoft.VisualStudio.Workload.VCTools ^
-            --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 ^
-            --add Microsoft.VisualStudio.Component.Windows11SDK.10.0.22621
-            
-        :: Clean up installer
-        del "%TEMP%\vs_BuildTools.exe"
-        
-        echo Build Tools installed. 
+:: 3. Load MSVC Build Tools (link.exe) which Rust needs on Windows
+for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul`) do (
+    set "VS_PATH=%%i"
+)
+if defined VS_PATH (
+    if exist "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat" (
+        echo Loading Visual C++ Environment...
+        call "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat" >nul
     )
+) else (
+    echo.
+    echo =====================================================
+    echo Microsoft C++ Build Tools not found.
+    echo Downloading and installing MSVC Build Tools automatically...
+    echo This may take a few minutes and require Administrator privileges.
+    echo =====================================================
+    echo.
     
-    :: Now explicitly load the Visual Studio Command Prompt environment
+    :: Download vs_buildtools
+    powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vs_BuildTools.exe' -OutFile '%TEMP%\vs_BuildTools.exe'"
+    
+    :: Install silently with necessary components for Rust
+    echo Running Visual Studio Installer...
+    start /wait "" "%TEMP%\vs_BuildTools.exe" --quiet --wait --norestart --nocache ^
+        --add Microsoft.VisualStudio.Workload.VCTools ^
+        --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 ^
+        --add Microsoft.VisualStudio.Component.Windows11SDK.10.0.22621
+        
+    :: Clean up installer
+    del "%TEMP%\vs_BuildTools.exe"
+    
+    echo Build Tools installed. 
+    
+    :: Load the environment now that it is installed
     for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
         set "VS_PATH=%%i"
     )
     if defined VS_PATH (
         if exist "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat" (
             echo Loading Visual C++ Environment...
-            call "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat"
+            call "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat" >nul
         )
     )
 )
