@@ -1,10 +1,23 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "name": "ensure-vibe-kanban",
+            "type": "command",
+            "command": "cmd.exe /c start_board.bat"
+          }
+        ]
+      }
+    ]
+  },
   "mcpServers": {
     "vibe-kanban": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "vibe-kanban",
+        "../vibe-kanban/npx-cli/bin/cli.js",
         "mcp"
       ],
       "env": {
