@@ -1,0 +1,55 @@
+#!/usr/bin/expect
+
+# Disable output to stdout (terminal) so we can control it via dump_screen
+log_user 0
+
+# Create log dir
+file mkdir "./gemini_session_log"
+set log_path "./gemini_session_log/raw_session.log"
+
+# Clear old log manually to ensure -noappend behavior for the spawn
+exec rm -f $log_path
+
+set timeout -1
+
+# Spawn gemini
+spawn gemini -y
+
+# IMPORTANT: ONLY log the output of the spawned process
+# By default log_file captures everything (send/expect/send_user)
+# We use 'log_file' with -a to append, but we want to avoid send_user
+# Actually, the best way in Expect to log ONLY the process is to use
+# the spawn_id specifically, but that's complex. 
+# Simpler: Disable logging before send_user and enable after.
+
+proc dump_screen {log_path} {
+    # Disable logging to file briefly so we don't log the DUMP itself
+    log_file
+    
+    set status [catch {exec python3 tools/terminal_dump_helper.py $log_path} output]
+    if {$status == 0} {
+        send_user "\033\[H\033\[2J"
+        send_user -- "$output\n"
+        send_user -- "--- Last Sync: [clock format [clock seconds] -format %H:%M:%S] ---\n"
+        send_user -- "--- Press Ctrl+C to terminate session ---\n"
+    }
+    
+    # Resume logging to file
+    log_file -noappend $log_path
+    
+    after 1500 [list dump_screen $log_path]
+}
+
+# Start logging
+log_file -noappend $log_path
+
+# Start the periodic updates
+after 1000 [list dump_screen $log_path]
+
+interact {
+    -o -re "(?i)keep trying" {
+        send_log "\n*** Auto-Reply: Saw 'keep trying', sending 1... ***\n"
+        send "1\r"
+        sleep 0.5
+    }
+}

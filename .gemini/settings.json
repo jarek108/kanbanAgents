@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "vibe-kanban": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "vibe-kanban",
+        "mcp"
+      ],
+      "env": {
+        "HOST": "127.0.0.1",
+        "PORT": "61154"
+      }
+    }
+  }
+}
