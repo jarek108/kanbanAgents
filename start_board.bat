@@ -19,17 +19,23 @@ where cargo >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo.
     echo =====================================================
-    echo ERROR: Rust is not installed.
-    echo Vibe Kanban requires Rust to compile the local backend.
-    echo.
-    echo Please install Rust manually:
-    echo 1. Go to https://rustup.rs/
-    echo 2. Download and run rustup-init.exe
-    echo 3. Restart your terminal/computer and run this script again.
+    echo Rust is not installed. Installing Rust automatically...
     echo =====================================================
     echo.
-    pause
-    exit /b 1
+    
+    :: Download rustup-init.exe
+    powershell -Command "Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile '%TEMP%\rustup-init.exe'"
+    
+    :: Run the installer silently
+    echo Running installer...
+    "%TEMP%\rustup-init.exe" -y --default-toolchain stable --profile default
+    
+    :: Clean up installer
+    del "%TEMP%\rustup-init.exe"
+    
+    :: Reload environment variables so 'cargo' is immediately available
+    echo Reloading environment variables...
+    call "%USERPROFILE%\.cargo\env.bat" 2>nul || echo Please restart your terminal if the script fails in the next step.
 )
 
 :: 3. Check for cargo-watch
