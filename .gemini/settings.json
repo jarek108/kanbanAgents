@@ -1,10 +1,9 @@
 {
   "mcpServers": {
     "vibe-kanban": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "vibe-kanban",
+        "../vibe-kanban/npx-cli/bin/cli.js",
         "mcp"
       ],
       "env": {
