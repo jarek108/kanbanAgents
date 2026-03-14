@@ -1,39 +1,25 @@
-# Kanban CLI Tools
+# Kanban CLI Tools & Integration
 
-CLI tools for interacting with a local Kanban API (at `http://192.168.1.185:61154`).
-HUMAN can run it with (do not do this automatically): $env:HOST="0.0.0.0"; $env:PORT="61154"; npx vibe-kanban
+This project is integrated with `vibe-kanban` to manage tasks autonomously. 
+HUMAN can run the server with (do not do this automatically): 
+`$env:HOST="127.0.0.1"; $env:PORT="61154"; npx -y vibe-kanban`
 
-## Tools Overview
+## ⚠️ Important Architecture Change (MCP)
 
-### `list_projects.py`
-Lists all available projects and their UUIDs.
+**The old Python REST API tools (`tools/list_projects.py`, `tools/get_tasks.py`, `tools/engine_kanban.py`) are DEPRECATED and BROKEN.** The newer versions of `vibe-kanban` no longer expose a REST JSON API at `/api/projects`.
 
-### `get_tasks.py`
-Fetches and displays tasks for a project. 
-- **Defaults**: Project `hexArena`, Recipient `ALL`, Presentation `medium`.
-- **Modes**: `--minimal` (one-liner), `medium` (default), `--full-presentation` (includes description).
-- **Filtering**: `--recipient [Name]` to filter tasks.
+**Instead, this project natively uses the Model Context Protocol (MCP).**
 
-### `monitor_project.py`
-Real-time monitoring of project changes.
-- **Features**: Detects new/updated/deleted tasks, shows colorized diffs for description changes.
-- **Highlights**: Highlights tasks assigned to the monitored user (default `Manager`) in GREEN.
-- **Sorting**: Lists user-assigned tasks first on startup.
+### How Agents Should Interact with the Board
+As an AI Agent (Gemini CLI), you do **not** need to run custom python scripts to interact with the board. You have native access to the `vibe-kanban` MCP server tools. 
 
-### `orchestrator_pty.py` (New)
+Use the built-in MCP tools prefixed with `mcp_vibe-kanban_` to read and modify the board:
+- `list_projects`: Get all project UUIDs.
+- `list_issues`: Fetch tasks for a specific project.
+- `create_issue`: Create a new task.
+- `update_issue`: Update task status (e.g., moving to 'Done') or description.
+
+### `orchestrator_pty.py`
 Full internal hosting Orchestrator using Windows ConPTY.
 - **Features**: No dependency on external windows; zero UI flickering; robust background monitoring.
 - **Usage**: `python tools/orchestrator_pty.py`
-
-## Usage Examples
-
-```bash
-# List all projects
-python tools/list_projects.py
-
-# Monitor default project for Manager
-python tools/monitor_project.py
-
-# Get tasks assigned to 'Coder-ID' in minimal format
-python tools/get_tasks.py hexArena --recipient Coder-ID --minimal
-```
