@@ -1,5 +1,6 @@
 import subprocess
 import os
+import shutil
 from pathlib import Path
 from bus import EventBus
 from events import StartCoding, WorkCompleted
@@ -119,9 +120,39 @@ class AgentHandler:
         print(f"AgentHandler: [PHASE 1] Coding task {event.context.get('id')}...")
         self._invoke_agent(workspace_path, CODING_PROMPT_TEMPLATE)
         
-        # Verify Phase 1: Last commit must be DONE_CODING AND workspace must be clean
+        # Second Chance Safety for Phase 1
         if self._get_last_commit_message(workspace_path) != "DONE_CODING" or self._is_workspace_dirty(workspace_path):
-            print("AgentHandler: Phase 1 incomplete or dirty. Wrapping up...")
+            print("AgentHandler: Phase 1 incomplete or dirty. Prompting agent for final check...")
+            
+            try:
+                task_def = (workspace_path / "implementation_request.md").read_text(encoding='utf-8')
+            except:
+                task_def = "Task definition unavailable."
+
+            final_check_prompt = f"""
+# FINAL CHECK
+You have stopped working, but the 'DONE_CODING' signal is missing or there are uncommitted changes.
+Are you finished with the following task?
+
+---
+{task_def}
+---
+
+If YES:
+1. Commit all your implementation work now.
+2. Push your changes.
+3. Commit an EMPTY message 'DONE_CODING'.
+4. Push it.
+
+If NO:
+1. Finish the task.
+2. Perform the steps above.
+"""
+            self._invoke_agent(workspace_path, final_check_prompt)
+
+        # Final Verify Phase 1: Manual wrap if still failing
+        if self._get_last_commit_message(workspace_path) != "DONE_CODING" or self._is_workspace_dirty(workspace_path):
+            print("AgentHandler: Phase 1 STILL incomplete. Wrapping up manually...")
             self._fail_safe_commit_and_push(workspace_path, "auto: wrap coding work", "DONE_CODING")
 
         # --- PHASE 2: REPORTING ---
