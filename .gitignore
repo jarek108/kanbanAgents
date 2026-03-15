@@ -39,3 +39,5 @@ tools/orchestrator_config.json
 
 artifacts/
 .perplexity_session/
+
+docs/research_notes/
