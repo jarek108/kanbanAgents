@@ -1,13 +1,14 @@
 {
   "mcpServers": {
     "vibe-kanban": {
-      "command": "node",
+      "command": "npx.cmd",
       "args": [
-        "../vibe-kanban/npx-cli/bin/cli.js",
+        "-y",
+        "vibe-kanban",
         "mcp"
       ],
       "env": {
-        "HOST": "127.0.0.1",
+        "HOST": "localhost",
         "PORT": "61154"
       }
     }
