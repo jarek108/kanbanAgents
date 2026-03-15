@@ -5,7 +5,7 @@ I have run a deep research query on Perplexity for: "{{args}}"
 
 Here are the raw research notes for your context:
 ---
-!{python scripts/research_perplexity.py "{{args}}"}
+!{python .gemini/scripts/research_perplexity.py "{{args}}"}
 ---
 
 Please read the above research. Acknowledge that you have ingested it, provide a brief 2-sentence summary of the core findings, and let me know if you are ready to apply this knowledge to our project.
