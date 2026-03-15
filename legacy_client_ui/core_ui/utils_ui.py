@@ -32,8 +32,8 @@ class ToolTip:
         if tw: tw.destroy()
 
 def get_config_path():
-    cfg_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
-    template_path = os.path.join(os.path.dirname(__file__), "orchestrator_config.template.json")
+    cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+    template_path = os.path.join(os.path.dirname(__file__), "config.template.json")
     if not os.path.exists(cfg_path) and os.path.exists(template_path):
         import shutil
         shutil.copy(template_path, cfg_path)

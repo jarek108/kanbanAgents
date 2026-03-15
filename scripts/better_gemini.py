@@ -1,5 +1,7 @@
 import sys
 import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import os
 import time
 import threading
 import msvcrt
@@ -9,7 +11,7 @@ import re
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 try:
-    from tools.engine_pty import PTY
+    from core.engine_pty import PTY
 except ImportError:
     print("Error: Could not find 'tools/engine_pty.py'. Please run this script from the project root.")
     sys.exit(1)

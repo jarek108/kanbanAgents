@@ -1,3 +1,9 @@
+import sys
+import os
+# Allow imports from core/ and core_ui/
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'core_ui')))
+
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
@@ -5,26 +11,29 @@ import os
 import json
 import webbrowser
 import time
-import manager_workers_pty
+import manager_workers
 import manager_projects
 import utils_ui
-import orchestrator_popups_pty
+import popups
 
 class OrchestratorPTY:
-    def __init__(self, root):
+    def __init__(self, root, reset_position=False):
         self.root = root
         self.root.title("Project Orchestrator (Fully Interactive Terminal)")
         
         # Load main config for UI state
         self.full_config = utils_ui.load_full_config()
         
-        geom = self.full_config.get("ui", {}).get("orch_geometry", "1200x850+50+50")
+        if reset_position:
+            geom = "1200x850+50+50"
+        else:
+            geom = self.full_config.get("ui", {}).get("orch_geometry", "1200x850+50+50")
         self.root.geometry(geom)
         self.root.configure(bg="#1e1e1e")
         
         # --- MANAGERS ---
         self.projects_mgr = manager_projects.ProjectManager(self.full_config)
-        self.workers_mgr = manager_workers_pty.WorkerManagerPTY(self.full_config)
+        self.workers_mgr = manager_workers.WorkerManagerPTY(self.full_config)
         
         self.active_worker_id = None
         
@@ -85,7 +94,7 @@ class OrchestratorPTY:
         self.proj_content_frame.pack(fill=tk.X)
         proj_btns = ttk.Frame(self.proj_content_frame)
         proj_btns.pack(side=tk.RIGHT, padx=5)
-        ttk.Button(proj_btns, text="+ Add Project", command=lambda: orchestrator_popups_pty.open_add_project_popup(self)).pack(fill=tk.X, pady=2)
+        ttk.Button(proj_btns, text="+ Add Project", command=lambda: popups.open_add_project_popup(self)).pack(fill=tk.X, pady=2)
         p_cols = ("id", "path", "kanban", "status")
         self.project_tree = ttk.Treeview(self.proj_content_frame, columns=p_cols, show="headings", height=3)
         for c in p_cols: self.project_tree.heading(c, text=c.capitalize()); self.project_tree.column(c, width=150)
@@ -99,7 +108,7 @@ class OrchestratorPTY:
         self.worker_content.pack(fill=tk.X)
         worker_btns = ttk.Frame(self.worker_content)
         worker_btns.pack(side=tk.RIGHT, padx=5)
-        ttk.Button(worker_btns, text="Spawn Worker", command=lambda: orchestrator_popups_pty.open_spawn_worker_popup(self)).pack(fill=tk.X, pady=2)
+        ttk.Button(worker_btns, text="Spawn Worker", command=lambda: popups.open_spawn_worker_popup(self)).pack(fill=tk.X, pady=2)
         ttk.Button(worker_btns, text="Kill Selected", command=self.kill_selected_worker).pack(fill=tk.X, pady=2)
         ttk.Button(worker_btns, text="Kill All", command=self.kill_all_workers).pack(fill=tk.X, pady=2)
         cols = ("id", "name", "status", "role", "project", "size", "time")
@@ -224,4 +233,7 @@ class OrchestratorPTY:
         utils_ui.save_full_config(self.full_config); self.root.destroy()
 
 if __name__ == "__main__":
-    root = tk.Tk(); app = OrchestratorPTY(root); root.mainloop()
+    reset_pos = "--reset-position" in sys.argv or "-r" in sys.argv
+    root = tk.Tk()
+    app = OrchestratorPTY(root, reset_position=reset_pos)
+    root.mainloop()

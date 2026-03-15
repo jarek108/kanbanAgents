@@ -6,8 +6,8 @@ import engine_events
 import tempfile
 import utils_ui
 
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "orchestrator_config.json")
-AGENT_DEFS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agent_definitions")
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "legacy_client_ui", "core_ui", "config.json")
+AGENT_DEFS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "legacy_client_ui", "agent_definitions")
 
 def _git_cmd(path, args):
     """Internal helper for git commands."""
@@ -91,7 +91,7 @@ def launch_worker(project, role):
     try:
         # Use Windows Terminal (wt.exe) to group agents in a named window "Agents".
         # IMPORTANT: semicolons must be escaped with \; for wt.exe parser
-        wt_cmd_str = cmd_str.replace(';', '\;')
+        wt_cmd_str = cmd_str.replace(';', r'\;')
         full_cmd = f'wt -w Agents nt --title "{title}" powershell -NoExit -Command "{wt_cmd_str}"'
         print(f"[DEBUG] Executing: {full_cmd}")
         subprocess.Popen(full_cmd, shell=True)
