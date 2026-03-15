@@ -34,9 +34,9 @@ if [ ! -d "$FORK_DIR" ]; then
 fi
 
 cd "$FORK_DIR"
-echo "Ensuring kanbanAgents branch..."
-git fetch origin kanbanAgents
-git checkout kanbanAgents
+echo "Ensuring main branch..."
+git fetch origin main
+git checkout main
 
 echo "Installing dependencies..."
 pnpm install
@@ -47,4 +47,7 @@ npm run build
 cd ..
 
 echo "Starting dev server..."
-HOST=127.0.0.1 PORT=61154 pnpm run dev
+export HOST=127.0.0.1
+export PORT=61154
+export VK_SHARED_API_BASE=https://api.vibekanban.com
+pnpm run dev
