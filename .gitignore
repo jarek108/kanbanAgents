@@ -41,3 +41,5 @@ artifacts/
 .perplexity_session/
 
 docs/research_notes/
+
+gemini_session_log/
