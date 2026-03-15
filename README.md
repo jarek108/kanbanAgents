@@ -17,7 +17,7 @@ The way to make agents *more useful* is to make them *less free* through **hard 
 
 This project treats “agentic coding” like a controlled production line. The project is a workflow graph (states + transitions). Every transition requires specific Markdown **artifacts** (e.g., specifications, implementation reports, QA results). No artifact, no transition. Wrong artifact, no transition. The orchestrator enforces the rules; agents produce the artifacts.
 
-*(Read the full manifesto in [`docs/notes/01_vision_and_philosophy.md`](docs/notes/01_vision_and_philosophy.md))*
+*(Read the formal specification in [`docs/notes/01_architecture.md`](docs/notes/01_architecture.md) and the extended manifesto in [`docs/notes/02_blog(vision_and_philosophy).md`](docs/notes/02_blog(vision_and_philosophy).md))*
 
 ---
 
@@ -75,10 +75,10 @@ The codebase is highly modularized, strictly isolating legacy UI from the headle
 *   `/core` - Reusable, headless workflow engines (`engine_pty.py`, `engine_kanban.py`).
 *   `/docs` - Specifications, architectural theory, and Markdown artifact templates.
 *   `/scripts` - Standalone automation tools (e.g., `gemini.exp`, `research_perplexity.py`).
-*   `/legacy_client_ui` - The Tkinter desktop app for visualizing ConPTY streams, quarantined for planned retirement as we move to a pure event-bus architecture.
+*   `/legacy_client_ui` - The Tkinter desktop app for visualizing ConPTY streams, quarantined for planned retirement (for details on the old design, see [`docs/notes/05_architecture(legacy).md`](docs/notes/05_architecture(legacy).md)).
 
 ---
 
 ## 🗺️ What's Next?
-*   Transitioning from the `legacy_client_ui` to a pure, headless Python event-bus architecture (see `docs/notes/02_architecture_v2.md`).
+*   Transitioning from the `legacy_client_ui` to a pure, headless Python event-bus architecture (see [`docs/notes/01_architecture.md`](docs/notes/01_architecture.md)).
 *   Expanding MCP integration to allow agents to natively reason about Git branching policies.
