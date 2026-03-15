@@ -8,7 +8,7 @@ Coding agents have improved in raw capability and usability, but their productiv
 
 * **I 2. Workflow violations**: Policies (e.g. review, QA, testing, or version control) are also fragile. Agents not restricted by explicit workflows and gating criteria undermine consistency and quality by inducing merges without testing, skipped reviews, inconsistent branching etc.
 
-* **I 3. Granularity shift and escalation management problem**: Lack of systematic tools to move from code-level intervention to architectural intent or project-wide status (or return when escalation is critical), combined with scope/workflow violations keep the user stuck in low-level implementational-level babysitting.
+* **I 3. Granularity shift and escalation management problem**: Lack of systematic tools to move from code-level intervention to architectural intent or project-wide status (or return when escalation is critical), combined with scope/workflow violations keep the user stuck in low-level terminal babysitting trap.
 
 * **I 4. Context fragmentation and cognitive overload**: Diverging contexts are easily disconnected with multiple plans, attempts, explanations and partial implementations with unclear coherence, especially in multi-agent setups. User becomes the critical bottleneck trying to supervise and reconcile the inconsistencies.
 
@@ -71,7 +71,7 @@ Added: Assumed artifact format enforces completness of the data required by the 
 
   </details>
 
-* **SD 2.2 Prioritized Project-level Focus**: Shift the primary user interaction to project-level task specification and monitoring to avoid getting stuck in implementation babysitting. 
+* **SD 2.2 Prioritized Project-level Focus**: Shift the primary user interaction to project-level task specification and monitoring to avoid getting stuck in terminal babysitting trap. 
 
   <details> <summary> More details...</summary> 
 

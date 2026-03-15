@@ -6,7 +6,7 @@ An autonomous orchestrator and toolkit for connecting AI coding agents (like Gem
 
 ---
 
-## 🎯 The Vision: Escaping the "Babysitting Trap"
+## 🎯 The Vision: Escaping the "Terminal Babysitting Trap"
 
 A year ago, “AI-assisted coding” mostly meant autocomplete. Now we have CLI agents that will happily churn through tasks: edit files, run commands, open PRs, “fix” errors, and explain everything with conviction.
 

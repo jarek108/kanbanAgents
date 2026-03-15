@@ -9,7 +9,7 @@ You’re right: a formal spec won’t sell the *why*, the *feel*, or the “this
 
 ## Points to add
 
-- The “babysitting trap” as the core experiential problem (why engineers can’t scale beyond one agent).
+- The “terminal babysitting trap” as the core experiential problem (why engineers can’t scale beyond one agent).
 - The *one scarce resource* framing: “productivity per human attention unit” (your PHA idea), not model benchmarks.
 - A clear “what’s new” claim: determinism comes from **workflow + artifacts + git gates**, not from better prompts.
 - Explicit separation of **intent**, **execution**, and **verification** (and why mixing them causes self-justifying failure).
@@ -38,7 +38,7 @@ Not because they’re control freaks. Because they’re rational.
 
 If the agent drifts, it doesn’t drift politely. It drifts into refactors, drive-by changes, and architectural violations that turn a 20-minute task into a three-hour whack‑a‑mole cycle. So engineers don’t orchestrate at the project level. They don’t run multiple agents. They babysit one.
 
-That’s the trap: as agents get more capable, **human attention becomes the bottleneck**.
+That’s the terminal babysitting trap: as agents get more capable, **human attention becomes the bottleneck**.
 
 ### My metric: productivity per human attention (PHA)
 
@@ -117,7 +117,7 @@ Artifact says “blocked,” the workflow stops.
 
 That gives you a clean audit trail, reproducibility, and a stable way for humans to jump in without reconstructing a week of prompt history.
 
-### Why this matters: escaping the babysitting loop
+### Why this matters: escaping the terminal babysitting loop
 
 This isn’t about making agents “autonomous.” It’s about making them **governable**.
 
