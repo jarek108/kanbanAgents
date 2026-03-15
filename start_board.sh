@@ -14,9 +14,13 @@ fi
 
 # --- 2. RUST ---
 if ! command -v cargo &> /dev/null; then
-    echo "cargo not found. Installing Rust..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source "$HOME/.cargo/env"
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+    else
+        echo "cargo not found. Installing Rust..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source "$HOME/.cargo/env"
+    fi
 fi
 
 # --- 3. C/C++ BUILD TOOLS & LLVM/CLANG (For Bindgen) ---
@@ -86,7 +90,13 @@ echo
 echo "====================================================="
 echo "EVERYTHING READY. STARTING LOCAL SERVER..."
 echo "====================================================="
-export HOST=127.0.0.1
-export PORT=61154
-export VK_SHARED_API_BASE=https://api.vibekanban.com
-pnpm run dev
+export FRONTEND_PORT=61154
+export BACKEND_PORT=61155
+export PREVIEW_PROXY_PORT=61156
+export VK_ALLOWED_ORIGINS="http://localhost:61154"
+export VK_SHARED_API_BASE="https://api.vibekanban.com"
+export VITE_VK_SHARED_API_BASE="https://api.vibekanban.com"
+
+pnpm exec concurrently \
+    "pnpm run backend:dev:watch" \
+    "cd packages/local-web && pnpm run dev -- --port $FRONTEND_PORT"
