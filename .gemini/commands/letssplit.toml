@@ -1,0 +1,14 @@
+description = "Reads the project plan from the most recent /letsplan session and decomposes it into granular, detailed technical tasks in a tasks/ subdirectory."
+prompt = """
+You are now in TASK DECOMPOSITION MODE.
+
+Your task:
+1. Find the most recent session directory under `experiments/` (the one with the latest timestamp in its name, e.g. `experiments/session_YYYYMMDD_HHMMSS/`).
+2. Read the `project_plan.md` file inside that directory.
+3. Run the headless Gemini agent to decompose the plan into granular technical tasks:
+
+!{bash -c "LATEST_SESSION=$(ls -d experiments/session_* 2>/dev/null | sort | tail -n 1) && if [ -z \"$LATEST_SESSION\" ]; then echo 'ERROR: No session directory found under experiments/. Run /letsplan first.' && exit 1; fi && mkdir -p $LATEST_SESSION/tasks && cd $(git rev-parse --show-toplevel) && uv run python core/headless_gemini.py -w . -p \"You are a senior lead developer. Read the project plan at ${LATEST_SESSION}/project_plan.md. Decompose it into granular, detailed technical tasks. Each task should be a small, actionable unit of work (ideally 2-4 hours). For each task, create a separate Markdown file inside ${LATEST_SESSION}/tasks/ named task_NN_short_name.md (e.g. task_01_setup_db_schema.md, task_02_implement_auth_middleware.md). Each task file MUST contain: 1. TASK TITLE 2. TECHNICAL OBJECTIVE - Precise technical goal. 3. IMPLEMENTATION STEPS - Step-by-step technical instructions. 4. FILES AFFECTED - List of files to create or modify. 5. CODE SNIPPETS/PSEUDOCODE - Examples or specific logic where helpful. 6. VERIFICATION - How to test this specific task. 7. ESTIMATED EFFORT - Hours (max 4). 8. DEPENDENCIES - Direct task-level dependencies. Create as many task files as needed to fully cover the plan. Each task should be as independent as possible.\" -t 900"}
+
+4. After the agent finishes, list the generated task files and present a summary table showing: Task #, Name, Estimated Effort, and Key Files.
+5. Ask the user if they want to refine any tasks or if they are ready to start implementation.
+"""
