@@ -17,8 +17,14 @@ class TestHeadlessGeminiIntegration(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir)
 
-    @unittest.skipIf(shutil.which("gemini") is None and not (Path(os.environ.get("APPDATA", "")) / "npm" / "gemini.cmd").exists(), 
-                     "Gemini CLI not found in PATH or APPDATA")
+    @unittest.skipIf(
+        shutil.which("gemini") is None and not (Path(os.environ.get("APPDATA", "")) / "npm" / "gemini.cmd").exists(), 
+        "Gemini CLI not found in PATH or APPDATA"
+    )
+    @unittest.skipIf(
+        not os.environ.get("GEMINI_API_KEY"),
+        "GEMINI_API_KEY environment variable is missing, skipping integration test."
+    )
     def test_simple_question_integration(self):
         """
         Integration test to verify that headless_gemini can actually invoke the 
