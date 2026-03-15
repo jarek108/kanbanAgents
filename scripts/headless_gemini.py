@@ -59,7 +59,7 @@ def invoke_agent(workspace_path: Path, prompt: str, model: str = "gemini-3-flash
 
     except FileNotFoundError:
         print("\nError: 'gemini' command not found. Ensure the Gemini CLI is installed and in your PATH.", file=sys.stderr)
-        # Fallback check for Windows npm roaming path as seen in chojnacki branch
+        # Fallback check for Windows npm roaming path
         alt_path = Path(os.environ.get("APPDATA", "")) / "npm" / "gemini.cmd"
         if alt_path.exists():
             print(f"Hint: Found gemini at {alt_path}. Try adding it to PATH.", file=sys.stderr)
