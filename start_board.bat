@@ -91,14 +91,14 @@ if %ERRORLEVEL% neq 0 (
 :: --- 6. PROJECT SETUP ---
 set "FORK_DIR=%~dp0..\vibe-kanban"
 if not exist "%FORK_DIR%" (
-    echo Cloning vibe-kanban fork - branch kanbanAgents-v2...
-    git clone -b kanbanAgents-v2 https://github.com/jarek108/vibe-kanban.git "%FORK_DIR%"
+    echo Cloning vibe-kanban fork - branch main...
+    git clone -b main https://github.com/jarek108/vibe-kanban.git "%FORK_DIR%"
 )
 
 cd /d "%FORK_DIR%"
 echo Updating repository...
-git fetch origin kanbanAgents-v2 >nul 2>nul
-git checkout kanbanAgents-v2 >nul 2>nul
+git fetch origin main >nul 2>nul
+git checkout main >nul 2>nul
 
 echo Installing pnpm dependencies...
 call pnpm install
