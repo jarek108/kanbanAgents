@@ -57,11 +57,10 @@ Open a terminal in the project root and run the unified cross-platform bootstrap
 ```
 
 ### 3. Start the Local Orchestrator
-In a separate terminal, launch the local Python orchestrator to manage your AI workers:
+Launch the headless Python orchestrator to manage your AI workers:
 ```bash
-python legacy_client_ui/app.py
+python core/engine_worker.py --worker_name MyManager
 ```
-*(Note: You can pass `--reset-position` if the Tkinter window spawns off-screen).*
 
 ### 4. Custom Gemini Commands
 This repository includes a `.gemini/` capability bundle containing custom macros. For example, use `/perp <query>` in your active Gemini CLI session to seamlessly trigger an automated Playwright web scraper that performs deep research on Perplexity.ai and injects the findings directly into your context window.
@@ -70,15 +69,14 @@ This repository includes a `.gemini/` capability bundle containing custom macros
 
 ## 📂 Repository Structure
 
-The codebase is highly modularized, strictly isolating legacy UI from the headless core:
+The codebase is centered around a modularized, headless core:
 
-*   `/core` - Reusable, headless workflow engines (`engine_pty.py`, `engine_kanban.py`).
+*   `/core` - Reusable workflow engines, ConPTY hosting, and worker management.
 *   `/docs` - Specifications, architectural theory, and Markdown artifact templates.
 *   `/scripts` - Standalone automation tools (e.g., `gemini.exp`, `research_perplexity.py`).
-*   `/legacy_client_ui` - The Tkinter desktop app for visualizing ConPTY streams, quarantined for planned retirement (for details on the old design, see [`docs/notes/05_architecture(legacy).md`](docs/notes/05_architecture(legacy).md)).
 
 ---
 
 ## 🗺️ What's Next?
-*   Transitioning from the `legacy_client_ui` to a pure, headless Python event-bus architecture (see [`docs/notes/01_architecture.md`](docs/notes/01_architecture.md)).
-*   Expanding MCP integration to allow agents to natively reason about Git branching policies.
+*   Finalizing the transition to a pure, headless Python event-bus architecture (see [`docs/notes/01_architecture.md`](docs/notes/01_architecture.md)).
+*   Migrating all core engines to use MCP natively instead of legacy REST APIs.

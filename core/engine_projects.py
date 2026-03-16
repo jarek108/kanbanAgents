@@ -6,8 +6,8 @@ import engine_events
 import tempfile
 import utils_ui
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "legacy_client_ui", "core_ui", "config.json")
-AGENT_DEFS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "legacy_client_ui", "agent_definitions")
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+AGENT_DEFS_DIR = os.path.join(os.path.dirname(__file__), "agent_definitions")
 
 def _git_cmd(path, args):
     """Internal helper for git commands."""
