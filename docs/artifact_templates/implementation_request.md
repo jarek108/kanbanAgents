@@ -1,8 +1,9 @@
-# Metadata
-ID: IRQ-XXXX  
-Recepient: Coder-ID  
-Repo: repo-name
-Base Commit: Hash of commit agent *starts work on*, or `TBD` if not branched yet.
+---
+id: IRQ-XXXX  
+recipient: Coder-ID  
+repo: repo-name
+base_commit: Hash of commit agent *starts work on*, or `TBD` if not branched yet.
+---
 
 # Summary
 1–2 sentences describing the task’s purpose and expected outcome.  
@@ -29,7 +30,7 @@ Call out adjacent improvements that are intentionally deferred (even if tempting
 Existing tests are passing
 Code refactored and cleaned up, old code removed
 Documentation updated to reflect changes
-Visua inspection confirms changes are as expected
+Visual inspection confirms changes are as expected
 
 # Implementation Guidance
 High-level direction (desired shape, not step-by-step instructions).  

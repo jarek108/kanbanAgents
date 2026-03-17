@@ -150,85 +150,11 @@ Priority: NICE TO HAVE
 - Error Recovery & Resilience: Timeout recovery, artifact validation failure handling, consistency guarantees.
 - Handle multi-agent/prompt explosion: Keep coordination and context overhead bounded by defaulting to a small universal workflow (e.g., 3 roles) while still allowing controlled extensions and modifications when justified.
 
-# **2. Core Concept: The Workflow Engine**
-The heart of the system is the **Workflow Definition (WFD)**. A WFD defines:
-- **Roles**: Logical participants in the flow (e.g., Architect, Coder, Reviewer).
-- **States**: The stages of a task (corresponds to Kanban columns).
-- **Transitions**: The logic that moves a task between states.
-- **Artifacts**: Mandatory files produced/consumed at each transition.
-- **Policies**: Git branching rules and shell restrictions for each role/state.
+# **2. Current Implementation: Artifact-Driven Transitions**
+The current architecture relies on a simplified, headless Python orchestrator (core/headless_gemini.py and core/engine_worker.py) that monitors task statuses via the Model Context Protocol (MCP).
 
----
+- **Dynamic Role Binding**: Agents receive explicit instructions via Markdown files in core/agent_definitions/ at spawn time.
+- **Artifact-Triggered Workflow**: The orchestration logic relies on deterministic YAML frontmatter parsing inside artifacts (e.g., IRQ-*.md, IRP-*.md) to define state and intent. The orchestrator triggers next steps based on these explicit definitions rather than relying on LLM-driven shell scripting.
+- **MCP Integration**: The system natively connects to the ibe-kanban server via MCP to fetch issues, create tasks, and update board columns based on the parsed artifacts.
 
-# **3. Component A: Centralized Kanban & Registry Service**
-## **MUST**
-- **Unified Board**: Browser UI that reflects the current state of all projects and workflows globally.
-- **Workflow Registry**: Store and serve versioned Workflow Definitions (WFDs) to local Orchestrators.
-- **Global Identity**: Track which Machine ID is currently hosting which specific Worker for a task.
-
-## **NICE TO HAVE**
-- **Flow Visualizer**: Interactive DAG (Directed Acyclic Graph) view of the active workflow.
-- **Artifact Explorer**: Deep integration with Markdown artifacts (diffs, version history).
-
----
-
-# **4. Component B: Generalized Machine Orchestrator**
-The Orchestrator is no longer "3-agent aware." It is a **State Machine Runner**.
-
-## **MUST**
-- **Dynamic Role Binding**: Launch workers based on the Roles defined in the active WFD (e.g., "Role: Reviewer" spawns a Gemini-CLI with the `reviewer.md` prompt).
-- **Artifact-Triggered Transitions**: Monitor the workspace for specific filenames or content patterns (e.g., "If `IRP-*.md` appears and contains `Status: ready`, move to `QA` state").
-- **State-Aware Git Management**: 
-    - Enforce branching patterns (e.g., `feature/`, `fix/`, `qa/`) based on the current state.
-    - Prevent "Ghost Commits" (workers committing to the wrong branch).
-- **Interactive PTY Multi-Tenancy**: Host multiple interactive terminal sessions simultaneously, providing a "Command Center" view for the human operator.
-- **Local Flow Persistence**: Save and resume the state of a flow even if the Orchestrator or workers are restarted.
-
-## **MUST NOT**
-- **Hardcoded Logic**: No "Manager/Coder/QA" logic should be in the Orchestrator code. It must all be loaded from the WFD.
-
----
-
-# **5. Component C: Gemini-CLI Workers (Agents)**
-## **MUST**
-- **Prompt Injection**: Receive their role-specific instructions (`agent_definitions/*.md`) at spawn time.
-- **Orchestrator API Hook**: Standardized way to "Submit Artifact" or "Signal Blockage" to the local Orchestrator.
-- **Context Awareness**: Ability to read the current "Task Metadata" (which branch they are on, what the preceding artifact was).
-
----
-
-# **6. Reference Implementation: The "Classic 3-Agent Flow"**
-A valid WFD for our initial use case would look like this (conceptual):
-
-```yaml
-Workflow: Classic-Development
-Roles: [Manager, Coder, QA]
-States:
-  - Name: Discovery
-    Owner: Manager
-    Exit_Trigger: Created(IRQ-*.md)
-    Next_State: Implementation
-
-  - Name: Implementation
-    Owner: Coder
-    Git_Policy: NewBranch(task/ID)
-    Exit_Trigger: Created(IRP-*.md)
-    Next_State: Validation
-
-  - Name: Validation
-    Owner: QA
-    Exit_Trigger: Content(QRP-*.md, "Status: final") -> Done
-    Retry_Trigger: Content(QRP-*.md, "Status: to_correct") -> Implementation
-```
-
----
-
-# **7. Must/Nice/Must Not Recap**
-
-| Feature | MUST | NICE TO HAVE | MUST NOT |
-| :--- | :--- | :--- | :--- |
-| **Workflows** | Pluggable/Data-driven | Hot-reloading of rules | Hardcoded state logic |
-| **Git** | Automated branching | Conflict auto-resolution | Unrestricted branch access |
-| **Terminal** | Full Interaction (ConPTY) | Remote Terminal Access | Log-only (non-interactive) |
-| **Artifacts** | Markdown-based | JSON Schema validation | Proprietary binary formats |
-| **Scale** | Multi-worker/Machine | Cloud-native deployment | Single-machine only |
+*(Note: Advanced features such as a fully declarative YAML Workflow Definition (WFD) engine, automated Git policy enforcement, and complex interactive PTY multi-tenancy are planned future enhancements.)*

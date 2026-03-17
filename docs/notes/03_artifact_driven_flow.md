@@ -1,16 +1,16 @@
-# Artefact-based 3 Agent Flow
+# Artifact-based 3 Agent Flow
 
 ## Roles
 - **Human**: 
     - Discusses intent, constraints, general architectural, implementational and QA approach, and final acceptance criteria with Manager-agent. 
     - Receives reports from Manager-agent when desired.
 - **Manager agent**: 
-    - Gathers all the relevant information to translates human input into two artefacts: an *Implementation Request* (for Coder) and a *QA Request* (for QA).  
+    - Gathers all the relevant information to translates human input into two artifacts: an *Implementation Request* (for Coder) and a *QA Request* (for QA).  
     - Reports the status of the tasks to human when asked
 - **Coder agent**: Implements based on the *Implementation Request*, optionally using the latest *QA Report*, and produces an *Implementation Report*. 
 - **QA agent**: Validates the implementation using the *QA Request*, the latest *Implementation Report*, and (if present) the previous *QA Report*, producing a new *QA Report*. 
 
-## Artefacts
+## Artifacts
 - **Implementation Request (IRQ-…)**: What to build, boundaries, DoD, constraints (created by Manager). 
 - **QA Request (QAR-…)**: What to validate, acceptance checks, risk areas (created by Manager). 
 - **Implementation Report (IRP-…)**: What changed, why, deviations/tests, handoff (created by Coder each round). 

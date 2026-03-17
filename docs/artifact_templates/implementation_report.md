@@ -1,19 +1,20 @@
-# Metadata
-- ID: IRP-XXXX
-- Outcome: ready | needs info | blocked
-- Recepient: QA-ID | Manager
-- Parent Request: IRQ-YYYY
-- Implementing Actor: Coder-ID
-- Implementation Round: 1..N
-- Last Implementation Report: None | IRP-ZZZZ
-- Last QA Report: None | QRP-YYYY
-- Repo: repo-name
-- Result Commit: hash
-- Base Commit: Start Hash for this round of implementation
-- Original Base Commit: Starting hash from the Implementation Request
-- Feature Branch: branch-name
+---
+id: IRP-XXXX
+outcome: ready | needs info | blocked
+recipient: QA-ID | Manager
+parent_request: IRQ-YYYY
+implementing_actor: Coder-ID
+implementation_round: 1..N
+last_implementation_report: None | IRP-ZZZZ
+last_qa_report: None | QRP-YYYY
+repo: repo-name
+result_commit: hash
+base_commit: Start Hash for this round of implementation
+original_base_commit: Starting hash from the Implementation Request
+feature_branch: branch-name
+---
 
-# Sumary
+# Summary
 ## Context
 1-2 sentences of the situation before the work started. 
 
