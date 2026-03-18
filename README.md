@@ -56,11 +56,14 @@ Open a terminal in the project root and run the unified cross-platform bootstrap
 ./start_board.sh
 ```
 
-### 3. Start the Local Orchestrator
-Launch the headless Python orchestrator to manage your AI workers:
-```bash
-python core/engine_worker.py --worker_name MyManager
-```
+### 3. Interact with the Board (MCP)
+The project is currently transitioning to a fully automated headless orchestrator. In the interim, you can manage the Kanban board manually using the built-in MCP tools from within your Gemini CLI session:
+
+- `mcp_vibe-kanban_list_issues`: View your assigned tasks.
+- `mcp_vibe-kanban_update_issue`: Move tasks between columns or update descriptions.
+- `mcp_vibe-kanban_create_issue`: Create new sub-tasks or follow-up items.
+
+*(The automated worker logic in `core/engine_worker.py` is currently being refactored to use these MCP tools natively.)*
 
 ### 4. Custom Gemini Commands
 This repository includes a `.gemini/` capability bundle containing custom macros. For example, use `/perp <query>` in your active Gemini CLI session to seamlessly trigger an automated Playwright web scraper that performs deep research on Perplexity.ai and injects the findings directly into your context window.
