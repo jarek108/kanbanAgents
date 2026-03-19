@@ -77,6 +77,7 @@ pnpm install
 
 echo "Building npx-cli..."
 cd npx-cli
+npm install
 npm run build
 cd ..
 
