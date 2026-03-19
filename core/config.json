@@ -1,0 +1,38 @@
+{
+    "kanban": {
+        "ip": "127.0.0.1",
+        "port": "61154",
+        "last_project": "hexArena",
+        "last_user": "Manager",
+        "poll_interval": 2.0,
+        "colors": {
+            "red": "\u001b[91m",
+            "green": "\u001b[92m",
+            "yellow": "\u001b[93m",
+            "reset": "\u001b[0m"
+        }
+    },
+    "terminal": {
+        "sync_interval_ms": 1000,
+        "last_title": "My2",
+        "last_geometry": "1000x400+329+-893",
+        "git_refresh_ms": 3000,
+        "last_id": "42,67024,4,68"
+    },
+    "projects": [
+        {
+            "name": "hexArena",
+            "local_path": "C:/Users/admin/Desktop/hexArena",
+            "kanban_project_name": "hexArena"
+        },
+        {
+            "name": "kanban",
+            "local_path": "C:/Users/admin/Desktop/kanban",
+            "kanban_project_name": "kanban"
+        }
+    ],
+    "ui": {
+        "orch_geometry": "3840x2097+-462+156",
+        "show_terminal": true
+    }
+}
