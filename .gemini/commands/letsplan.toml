@@ -1,0 +1,18 @@
+description = "Launches a headless Gemini agent to create a deeply detailed technical project plan, saved to a unique session directory under experiments/."
+prompt = """
+You are now in PROJECT PLANNING MODE.
+
+The user wants a comprehensive technical project plan for the following:
+
+Topic: {{args}}
+
+Your task:
+1. Generate a unique session directory name using the current timestamp, e.g. `experiments/session_YYYYMMDD_HHMMSS/`.
+2. Create that directory at the repo root.
+3. Run the headless Gemini agent to generate the plan by executing this shell command (substitute the session dir you created):
+
+!{bash -c "SESSION_DIR=experiments/session_$(date +%Y%m%d_%H%M%S) && mkdir -p $SESSION_DIR && cd $(git rev-parse --show-toplevel) && uv run python core/headless_gemini.py -w . -p \"You are a senior technical architect. Create an extremely detailed, in-depth technical project plan for the following project: {{args}}. The plan MUST be saved as a Markdown file at ${SESSION_DIR}/project_plan.md. The plan MUST include ALL of the following sections: 1. EXECUTIVE SUMMARY - Project vision, goals, and success metrics. 2. TECHNICAL ARCHITECTURE - System design, component diagrams (as text), data flow. 3. TECHNOLOGY STACK - Languages, frameworks, databases, cloud services, with justification for each choice. 4. HARDWARE REQUIREMENTS - Development machines, CI/CD infrastructure, staging/production servers, estimated costs. 5. SOFTWARE DEPENDENCIES - All libraries, tools, SDKs, and their versions. 6. IMPLEMENTATION PHASES - Detailed breakdown into phases, each with subtasks, estimated effort (hours), and deliverables. 7. API CONTRACTS & DATA MODELS - Key interfaces, schemas, and data structures. 8. TESTING STRATEGY - Unit, integration, e2e, performance testing approaches. 9. DEPLOYMENT & INFRASTRUCTURE - CI/CD pipeline, containerization, monitoring, logging. 10. RISK ASSESSMENT - Technical risks, mitigation strategies, fallback plans. 11. TIMELINE & MILESTONES - Gantt-style timeline with dependencies. Write the complete plan directly to ${SESSION_DIR}/project_plan.md.\" -t 600"}
+
+4. After the agent finishes, read the generated plan from the session directory and present a summary to the user.
+5. Ask if they want to refine any section.
+"""
